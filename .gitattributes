@@ -1,0 +1,4 @@
+# Binary art: never diff or convert line endings.
+*.blend binary
+*.glb binary
+*.png binary

@@ -1,0 +1,340 @@
+import "./hud.css";
+import type { ItemStack } from "../data/ids";
+import { ITEMS } from "../data/items";
+import type { TideReading } from "../systems/tide";
+
+export interface CompassMarker {
+  /** World yaw of the marker relative to north (radians, same convention as the player yaw). */
+  yaw: number;
+  label: string;
+  dist?: number;
+  kind: "landing" | "home" | "objective";
+}
+
+export interface HudView {
+  tide: TideReading;
+  objective: { title: string; hint: string } | null;
+  checklist: (ItemStack & { have: number })[];
+  hp: number;
+  maxHp: number;
+  dashCharges: number;
+  dashMax: number;
+  dashRecharge: number;
+  prompt: string | null;
+  promptBlocked: boolean;
+  locationName: string;
+  safe: boolean;
+  food: { name: string; count: number } | null;
+  satchel: { used: number; cap: number };
+  haul: number | null;
+  gather: number | null;
+  compass: { yaw: number; markers: CompassMarker[] } | null;
+  boss: { name: string; frac: number; exposed: boolean } | null;
+  threats: { angle: number; level: number }[];
+}
+
+const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, parent: HTMLElement, html = ""): HTMLElementTagNameMap[K] => {
+  const e = document.createElement(tag);
+  e.className = cls;
+  e.innerHTML = html;
+  parent.appendChild(e);
+  return e;
+};
+
+const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+
+const PHASE_LABEL = { low: "Low tide", rising: "Tide rising", high: "High tide", falling: "Tide falling" } as const;
+
+export class Hud {
+  private readonly overlay: HTMLDivElement;
+  private readonly overlayGo: HTMLParagraphElement;
+  private readonly overlayNote: HTMLParagraphElement;
+  private readonly objTitle: HTMLDivElement;
+  private readonly objHint: HTMLDivElement;
+  private readonly objList: HTMLUListElement;
+  private readonly tideBox: HTMLDivElement;
+  private readonly tideLabel: HTMLDivElement;
+  private readonly tideTime: HTMLDivElement;
+  private readonly tideFill: HTMLDivElement;
+  private readonly bannerEl: HTMLDivElement;
+  private readonly promptEl: HTMLDivElement;
+  private readonly toasts: HTMLDivElement;
+  private readonly hpFill: HTMLDivElement;
+  private readonly hpText: HTMLDivElement;
+  private readonly dash: HTMLDivElement;
+  private readonly place: HTMLDivElement;
+  private readonly foodEl: HTMLDivElement;
+  private readonly bagEl: HTMLDivElement;
+  private readonly dlg: HTMLDivElement;
+  private readonly dlgName: HTMLDivElement;
+  private readonly dlgText: HTMLDivElement;
+  private readonly crosshair: HTMLDivElement;
+  private readonly hitEl: HTMLDivElement;
+  private readonly ring: SVGCircleElement;
+  private readonly ringWrap: HTMLDivElement;
+  private readonly pips: HTMLDivElement;
+  private readonly hurtArc: HTMLDivElement;
+  private readonly vignette: HTMLDivElement;
+  private readonly bossEl: HTMLDivElement;
+  private readonly bossName: HTMLDivElement;
+  private readonly bossFill: HTMLDivElement;
+  private readonly compass: HTMLDivElement;
+  private readonly compassTrack: HTMLDivElement;
+  private readonly fadeEl: HTMLDivElement;
+  private readonly cardTitle: HTMLDivElement;
+  private readonly cardSub: HTMLDivElement;
+  private dlgLines: string[] = [];
+  private bannerTimer = 0;
+  private hitTimer = 0;
+  private hurtTimer = 0;
+  private lastPrompt = "";
+
+  constructor(root: HTMLElement) {
+    root.classList.add("hud");
+
+    this.vignette = el("div", "vignette", root);
+    this.hurtArc = el("div", "hurt-arc", root);
+
+    const obj = el("div", "objective", root);
+    el("div", "eyebrow", obj, "Keeper's task");
+    this.objTitle = el("div", "obj-title", obj);
+    this.objHint = el("div", "obj-hint", obj);
+    this.objList = el("ul", "obj-list", obj);
+
+    this.tideBox = el("div", "tide", root);
+    this.tideLabel = el("div", "tide-label", this.tideBox);
+    this.tideTime = el("div", "tide-time", this.tideBox);
+    const gauge = el("div", "tide-gauge", this.tideBox);
+    this.tideFill = el("div", "tide-fill", gauge);
+    this.place = el("div", "place", root);
+
+    this.compass = el("div", "compass", root);
+    this.compassTrack = el("div", "compass-track", this.compass);
+
+    this.bossEl = el("div", "boss hidden", root);
+    this.bossName = el("div", "boss-name", this.bossEl);
+    const bar = el("div", "boss-bar", this.bossEl);
+    this.bossFill = el("div", "boss-fill", bar);
+
+    this.bannerEl = el("div", "banner", root);
+    this.crosshair = el("div", "crosshair", root);
+    this.hitEl = el("div", "hitmark", root);
+    this.ringWrap = el("div", "gather-ring hidden", root);
+    this.ringWrap.innerHTML = `<svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="20" class="track"/><circle cx="24" cy="24" r="20" class="fill"/></svg>`;
+    this.ring = this.ringWrap.querySelector<SVGCircleElement>("circle.fill")!;
+    this.pips = el("div", "pips", root);
+    this.promptEl = el("div", "prompt", root);
+    this.toasts = el("div", "toasts", root);
+
+    const vitals = el("div", "vitals", root);
+    const hp = el("div", "hp", vitals);
+    this.hpFill = el("div", "hp-fill", hp);
+    this.hpText = el("div", "hp-text", hp);
+    this.dash = el("div", "dash", vitals);
+    this.foodEl = el("div", "food", root);
+    this.bagEl = el("div", "bag", root);
+
+    this.dlg = el("div", "dialogue", root);
+    this.dlgName = el("div", "dlg-name", this.dlg);
+    this.dlgText = el("div", "dlg-text", this.dlg);
+    el("div", "dlg-more", this.dlg, "<b>E</b> continue");
+
+    this.fadeEl = el("div", "fade", root);
+    this.cardTitle = el("div", "card-title", this.fadeEl);
+    this.cardSub = el("div", "card-sub", this.fadeEl);
+
+    this.overlay = el("div", "overlay", root);
+    this.overlay.innerHTML = `
+      <div class="card">
+        <h1>The Last Lighthouse</h1>
+        <p class="sub">The lamp is failing. You are its new keeper.</p>
+        <div class="controls">
+          <span><b>WASD</b> move</span><span><b>Mouse</b> look</span><span><b>Space</b> jump</span>
+          <span><b>Shift</b> dash</span><span><b>E</b> interact</span><span><b>LMB</b> fire</span>
+          <span><b>F</b> eat</span><span><b>Z</b> next food</span><span><b>Tab</b> journal</span><span><b>Esc</b> pause</span>
+        </div>
+        <p class="go">Loading…</p>
+        <p class="note hidden"></p>
+      </div>`;
+    this.overlayGo = this.overlay.querySelector<HTMLParagraphElement>(".go")!;
+    this.overlayNote = this.overlay.querySelector<HTMLParagraphElement>(".note")!;
+  }
+
+  onOverlayClick(fn: () => void): void {
+    this.overlay.addEventListener("click", fn);
+  }
+
+  /** Title card before the first start, pause card after; `prompt` overrides the call to action. */
+  setOverlay(mode: "title" | "paused" | "hidden", prompt?: string): void {
+    this.overlay.classList.toggle("hidden", mode === "hidden");
+    this.overlayGo.textContent = prompt ?? (mode === "paused" ? "Paused — click to resume" : "Click to begin");
+  }
+
+  /** A standing explanation under the controls, e.g. why the mouse isn't captured. */
+  setOverlayNote(text: string | null): void {
+    this.overlayNote.textContent = text ?? "";
+    this.overlayNote.classList.toggle("hidden", !text);
+  }
+
+  render(v: HudView, dt: number): void {
+    this.objTitle.textContent = v.objective?.title ?? "Chapter complete";
+    this.objHint.textContent = v.objective?.hint ?? "Saltmere burns again. The coast is yours to explore.";
+    this.objList.innerHTML = v.checklist
+      .map((c) => `<li class="${c.have >= c.qty ? "met" : ""}">${ITEMS[c.item].name}<span>${Math.min(c.have, c.qty)}/${c.qty}</span></li>`)
+      .join("");
+
+    const t = v.tide;
+    this.tideLabel.textContent = PHASE_LABEL[t.phase];
+    const verb = t.phase === "rising" || t.phase === "falling" ? "Settles in" : t.nextTurn === "rising" ? "Rises in" : "Falls in";
+    this.tideTime.textContent = `${verb} ${fmt(t.phaseTimeLeft)}`;
+    this.tideFill.style.height = `${8 + t.level * 84}%`;
+    this.tideBox.classList.toggle("warn", t.warning);
+
+    this.place.textContent = v.locationName + (v.safe ? " · safe" : "");
+    this.place.classList.toggle("safe", v.safe);
+
+    const prompt = v.prompt ? (v.promptBlocked ? v.prompt : `<b>E</b> ${v.prompt}`) : "";
+    if (prompt !== this.lastPrompt) {
+      this.promptEl.innerHTML = prompt;
+      this.lastPrompt = prompt;
+    }
+    this.promptEl.classList.toggle("hidden", !v.prompt || this.dlgLines.length > 0);
+    this.promptEl.classList.toggle("blocked", v.promptBlocked);
+
+    const frac = Math.max(0, v.hp / v.maxHp);
+    this.hpFill.style.width = `${frac * 100}%`;
+    this.hpText.textContent = `${Math.ceil(Math.max(0, v.hp))} / ${v.maxHp}`;
+    this.dash.innerHTML = Array.from({ length: v.dashMax }, (_, i) =>
+      i < v.dashCharges ? `<i class="on"></i>` : i === v.dashCharges ? `<i style="--k:${v.dashRecharge.toFixed(2)}"></i>` : "<i></i>",
+    ).join("");
+    this.vignette.style.opacity = String(Math.max(frac < 0.3 ? (0.3 - frac) * 2 : 0, this.hurtTimer * 1.6));
+
+    this.foodEl.innerHTML = v.food ? `<b>F</b> ${v.food.name} <span>×${v.food.count}</span>` : `<span class="dim">No food packed</span>`;
+    this.bagEl.innerHTML = `Satchel ${v.satchel.used}/${v.satchel.cap}${v.haul !== null ? ` · <span>Haul ${v.haul}</span>` : ""}`;
+    this.bagEl.classList.toggle("full", v.satchel.used >= v.satchel.cap);
+
+    if (v.gather !== null) {
+      this.ringWrap.classList.remove("hidden");
+      this.ring.style.strokeDashoffset = String(125.7 * (1 - v.gather));
+    } else this.ringWrap.classList.add("hidden");
+
+    if (v.boss) {
+      this.bossEl.classList.remove("hidden");
+      this.bossName.textContent = v.boss.exposed ? `${v.boss.name} — heart exposed!` : v.boss.name;
+      this.bossFill.style.width = `${Math.max(0, v.boss.frac) * 100}%`;
+      this.bossEl.classList.toggle("exposed", v.boss.exposed);
+    } else this.bossEl.classList.add("hidden");
+
+    this.pips.innerHTML = v.threats.map((p) => `<i style="transform: rotate(${p.angle}rad) translateY(-150px); opacity:${(0.4 + p.level * 0.6).toFixed(2)}"></i>`).join("");
+
+    if (v.compass) {
+      this.compass.classList.remove("hidden");
+      const toPx = (yaw: number) => {
+        let d = v.compass!.yaw - yaw;
+        d = Math.atan2(Math.sin(d), Math.cos(d));
+        return d;
+      };
+      const items: string[] = [];
+      for (const [label, yaw] of [
+        ["N", 0],
+        ["W", Math.PI / 2],
+        ["S", Math.PI],
+        ["E", -Math.PI / 2],
+      ] as const) {
+        const d = toPx(yaw);
+        if (Math.abs(d) < 1.6) items.push(`<span class="dir" style="left:${50 + (d / 1.6) * 50}%">${label}</span>`);
+      }
+      for (const m of v.compass.markers) {
+        const d = toPx(m.yaw);
+        const clamped = Math.max(-1.55, Math.min(1.55, d));
+        items.push(`<span class="mk ${m.kind}${Math.abs(d) > 1.55 ? " edge" : ""}" style="left:${50 + (clamped / 1.6) * 50}%">${m.label}${m.dist !== undefined ? `<em>${Math.round(m.dist)} m</em>` : ""}</span>`);
+      }
+      this.compassTrack.innerHTML = items.join("");
+    } else this.compass.classList.add("hidden");
+
+    if (this.bannerTimer > 0) {
+      this.bannerTimer -= dt;
+      if (this.bannerTimer <= 0) this.bannerEl.classList.remove("show");
+    }
+    if (this.hitTimer > 0) {
+      this.hitTimer -= dt;
+      if (this.hitTimer <= 0) this.hitEl.className = "hitmark";
+    }
+    if (this.hurtTimer > 0) {
+      this.hurtTimer = Math.max(0, this.hurtTimer - dt);
+      this.hurtArc.style.opacity = String(Math.min(1, this.hurtTimer * 2));
+    }
+  }
+
+  toast(text: string, kind: "info" | "gain" | "warn" | "milestone" = "info", seconds?: number): void {
+    // Merge repeated gain toasts ("+2 Timber" then "+3 Timber" → "+5 Timber").
+    if (kind === "gain") {
+      const last = this.toasts.lastElementChild as HTMLDivElement | null;
+      const m = /^\+(\d+) (.+)$/.exec(text);
+      const lm = last && !last.classList.contains("out") ? /^\+(\d+) (.+)$/.exec(last.textContent ?? "") : null;
+      if (m && lm && lm[2] === m[2] && last?.classList.contains("gain")) {
+        last.textContent = `+${Number(lm[1]) + Number(m[1])} ${m[2]}`;
+        return;
+      }
+    }
+    const t = el("div", `toast ${kind}`, this.toasts);
+    t.textContent = text;
+    const ms = (seconds ?? (kind === "milestone" ? 4.2 : 2.6)) * 1000;
+    setTimeout(() => t.classList.add("out"), ms);
+    setTimeout(() => t.remove(), ms + 600);
+    while (this.toasts.children.length > 6) this.toasts.firstElementChild?.remove();
+  }
+
+  banner(text: string, seconds = 4): void {
+    this.bannerEl.textContent = text;
+    this.bannerEl.classList.add("show");
+    this.bannerTimer = seconds;
+  }
+
+  hitMarker(weak: boolean): void {
+    this.hitEl.className = `hitmark show${weak ? " weak" : ""}`;
+    this.hitTimer = 0.12;
+  }
+
+  /** Red arc pointing toward whatever hit you; `angle` is relative to where you face (0 = ahead). */
+  damageFrom(angle: number | null): void {
+    this.hurtTimer = 0.6;
+    this.hurtArc.style.transform = `translate(-50%, -50%) rotate(${angle ?? 0}rad)`;
+    this.hurtArc.classList.toggle("omni", angle === null);
+  }
+
+  /** Full-screen fade with an optional title card (travel, defeat). */
+  fade(opacity: number, color = "#05090c", title = "", sub = ""): void {
+    this.fadeEl.style.background = color;
+    this.fadeEl.style.opacity = String(opacity);
+    this.cardTitle.textContent = title;
+    this.cardSub.textContent = sub;
+  }
+
+  get dialogueOpen(): boolean {
+    return this.dlgLines.length > 0;
+  }
+
+  showDialogue(name: string, lines: string[]): void {
+    this.dlgLines = [...lines];
+    this.dlgName.textContent = name;
+    this.advanceDialogue(true);
+  }
+
+  /** Shows the next line; closes when out of lines. */
+  advanceDialogue(first = false): void {
+    if (!first) this.dlgLines.shift();
+    const line = this.dlgLines[0];
+    this.dlg.classList.toggle("show", line !== undefined);
+    if (line !== undefined) this.dlgText.textContent = line;
+  }
+
+  closeDialogue(): void {
+    this.dlgLines = [];
+    this.dlg.classList.remove("show");
+  }
+
+  setCrosshair(visible: boolean): void {
+    this.crosshair.classList.toggle("hidden", !visible);
+  }
+}
