@@ -21,7 +21,7 @@ export interface EnemyMarker {
 
 /** Static interactables: stations, NPCs, boats, ladders, the beacon lamp. */
 export interface LevelInteract {
-  /** e.g. "storage", "hearth", "forge", "lamp", "boat", "path_shore", "npc:maren", "rope_ladder", "beacon". */
+  /** e.g. "storage", "hearth", "forge", "lamp", "boat", "plot:forge", "npc:maren", "rope_ladder", "beacon". */
   id: string;
   object: THREE.Object3D;
   /** Interaction reach in metres. */
@@ -87,6 +87,16 @@ export function updateBuoys(buoys: readonly Buoy[], waterY: number, time: number
     b.object.updateMatrixWorld(true);
     b.box.copy(b.local).applyMatrix4(b.object.matrixWorld);
   }
+}
+
+/** The first object under `root`, itself included, whose name starts with `prefix` (Blender numbers the copies it places: "smoke001"). */
+export function findNamed(root: THREE.Object3D, prefix: string): THREE.Object3D | null {
+  if (root.name.startsWith(prefix)) return root;
+  for (const c of root.children) {
+    const found = findNamed(c, prefix);
+    if (found) return found;
+  }
+  return null;
 }
 
 export function disposeObject(root: THREE.Object3D): void {

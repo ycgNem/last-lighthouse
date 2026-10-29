@@ -4,7 +4,7 @@ import * as THREE from "three";
 // yet. Enemy cues are positional (HRTF) because in first person you have to
 // hear what's behind you. Real recordings can replace any of these later.
 
-type Ambience = "home" | "shore" | "wreck" | "beacon" | "none";
+type Ambience = "home" | "wreck" | "beacon" | "none";
 
 export class Sfx {
   /** Text for the important cues, for the captions setting (with where it came from, if anywhere). */
@@ -276,6 +276,32 @@ export class Sfx {
 
   splash(at?: THREE.Vector3): void {
     this.noise({ dur: 0.35, gain: 0.15, freq: 1400, sweepTo: 500, at });
+  }
+
+  // ------------------------------------------------------- salvage hook
+
+  /** The grapnel leaves the bolt-caster: the reel's twang and the line whistling out. */
+  hookThrow(): void {
+    this.tone({ type: "sawtooth", f0: 240, f1: 170, dur: 0.09, gain: 0.06, lowpass: 1800 });
+    this.noise({ dur: 0.3, gain: 0.1, freq: 700, sweepTo: 2600, q: 1.2, delay: 0.02 });
+  }
+  /** It bites: iron on wood. */
+  hookBite(at: THREE.Vector3): void {
+    this.tone({ type: "triangle", f0: 1900, dur: 0.07, gain: 0.07, at });
+    this.tone({ type: "triangle", f0: 2860, dur: 0.05, gain: 0.04, at, delay: 0.015 });
+  }
+  /** The reel's pawl, click by click. */
+  reelTick(): void {
+    this.tone({ type: "square", f0: 1350, f1: 1100, dur: 0.018, gain: 0.025, lowpass: 3200 });
+  }
+  /** A plank torn off a wreck. */
+  hookCrack(at: THREE.Vector3): void {
+    this.noise({ dur: 0.2, gain: 0.2, freq: 1100, sweepTo: 320, q: 0.9, at });
+    this.tone({ type: "sine", f0: 120, f1: 55, dur: 0.18, gain: 0.1, at });
+  }
+  /** A miss on dry ground. */
+  hookThud(at: THREE.Vector3): void {
+    this.noise({ dur: 0.1, gain: 0.12, freq: 450, at });
   }
   gather(): void {
     this.noise({ dur: 0.07, gain: 0.08, freq: 1500 });

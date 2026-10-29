@@ -11,9 +11,9 @@ import { skillLevel } from "../systems/skills";
 import { collapseMaterials } from "../world/Batch";
 import type { NodeMarker } from "../world/Level";
 
-// A gatherable spot in the world: driftwood, scrap, kelp, glass, caches,
-// fishing spots and the Drowned Lens. Gathering is quick: a short hold with a
-// ring on the HUD, a pop, and the haul flies into you.
+// What E takes: a crate to open, a fishing spot, the Drowned Lens. A short
+// hold with a ring on the HUD, a pop, and the haul flies into you. Wreckage is
+// the hook's (Wreckage.ts, Hook.ts).
 
 const rippleGeo = new THREE.RingGeometry(0.7, 0.85, 32).rotateX(-Math.PI / 2);
 
@@ -126,10 +126,8 @@ export class GatherNode {
   }
 
   /** Seconds of hold-to-gather (0 for instant use, e.g. fishing). */
-  holdTime(ctx: GameContext): number {
-    if (this.def.kind === "fish") return 0;
-    const fast = this.def.skill === "salvaging" && skillLevel(ctx.state, "salvaging") >= 9 ? 0.7 : 1;
-    return this.def.gatherTime * fast;
+  holdTime(_ctx: GameContext): number {
+    return this.def.kind === "fish" ? 0 : this.def.gatherTime;
   }
 
   /** Gives the yields, XP and feedback, then uses up one gather. */

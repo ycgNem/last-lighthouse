@@ -11,18 +11,19 @@ primitive placeholder of the same size. Tri budgets are targets, not hard limits
 | [x] | Bolt-caster Mk I, Mk II, Lamplighter | `viewmodels.glb` (`VM_boltcaster_mk1/mk2`, `VM_lamplighter`) | animated in code (recoil, sway, lower) |
 | [x] | Keeper's lantern | `viewmodels.glb` (`VM_lantern`) | plus a world light on the camera |
 | [x] | Fishing rods + bobber | `viewmodels.glb` (`VM_rod_basic/reinforced`, `VM_bobber`) | `tip` empty anchors the line |
+| [x] | Salvage hook: reel and grapnel per tier | `viewmodels.glb` (`VM_reel_<tier>`, `VM_grapnel_<tier>`: rope, iron, brass) | the reel clamps under the bolt-caster, the grapnel sits at its muzzle; a clone flies on the line |
 | [x] | Brine Crab | `enemies.glb` (`MODEL_brine_crab`) | glowing claws (`GLOW_`) |
 | [x] | Drowned Spitter | `enemies.glb` | throat glow |
 | [x] | Lantern Wisp | `enemies.glb` | cage + core |
 | [x] | Tide Lurker | `enemies.glb` | jaw, surfaces from the water |
 | [x] | Wreck Guardian | `enemies.glb` | arms, heart-lantern weak point |
-| [x] | Lantern's Rest | built in code (`HomeLevel.ts`) | lighthouse, cottages, forge and dock states, boats, NPCs as simple figures |
-| [x] | Gullwash Shore | `locations/shore.glb` | jetty, dunes, flats, sandbar, islet, spit |
+| [x] | Lantern's Rest | `locations/home.glb` (`home_map.py`, from `home.blend`'s `HOME_` models) | knoll, village terrace, quay, cove with beach, flats, wreck field and rock arms; every plot as a ruin and a finished building; boats; the people are Polyfork characters |
 | [x] | Wreck of the Meridian | `locations/wreck.glb` | hull, hold, deck, chart room, fallen mast, floating crates, reef |
 | [x] | Saltmere Beacon | `locations/beacon.glb` | causeway, gate, ring arena, stair, beacon tower |
-| [x] | Gather nodes, tide pole, buoy crate, rope ladder, rowboat, signpost, lantern post, barrel, hull ribs, dune grass, beacon lamp, lens pedestal | `props.glb` (`PROP_<id>`) | |
+| [x] | Nodes, tide pole, buoy crate, rope ladder, rowboat, signpost, lantern post, barrel, hull ribs, dune grass, beacon lamp, lens pedestal | `props.glb` (`PROP_<id>`) | |
+| [x] | Drift (planks, drum, kelp mat, bottles, barrel, log, ship's crate); the cove's wrecks in tearable pieces (boat, pilings, boiler); decor pieces; plot boards | `props.glb` (`PROP_flot_<kind>`, `PROP_wreck_<name>`, `PROP_decor_<kind>`, `PROP_plot_board`) | wrecks come apart by their `*_piece_<n>` parts |
 | [ ] | Chart table | — | the chart is a menu for now, opened from the boat |
-| [ ] | NPC models (Maren, Tib, Odile, Hesk, family) | — | simple figures in code for now |
+| [x] | NPC models (Maren, Tib, Odile, Hesk, two families) | [Polyfork](https://polyfork.dev), hotlinked (`src/data/villagers.ts`) | simple figures in code when offline |
 | [ ] | Upgrade-quality art pass on everything | — | current art is chunky low-poly |
 
 ## Textures
@@ -49,5 +50,6 @@ sounds can replace any of them.
 | [x] | crab click, windups, wisp blink, lurker bubbles and bite, orbs | positional |
 | [x] | boss: chain rattle, mortar boom, roar | |
 | [x] | gather, pickup, level-up, craft, upgrade, UI, denied | |
+| [x] | the hook: throw, bite, reel ticks, crack (a piece torn off), thud (a miss on land) | positional |
 | [x] | fishing: splash, bite | |
 | [ ] | rain, gulls, music stingers | |

@@ -86,6 +86,11 @@ export class BeamRig {
     this.setLook(this.look);
   }
 
+  /** Aims the spotlight's sweep at ground this far below the lamp, 60 m out. */
+  setGroundDrop(drop: number): void {
+    this.spot?.target.position.set(60, -drop, 0);
+  }
+
   setLook(look: BeamLook): void {
     this.look = look;
     this.mat.uniforms.color!.value.setHex(look.color);

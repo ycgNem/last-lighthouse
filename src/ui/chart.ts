@@ -95,16 +95,15 @@ export function chartSvg(v: ChartView): string {
   const rocks = C.rocks.map(([x, y]) => `M${x - 2} ${y}h4M${x} ${y - 2}v4`).join("");
   const soundings = C.soundings.map(([x, y, t]) => `<text x="${x}" y="${y}">${t}</text>`).join("");
 
-  // Routes: the cliff path on foot, the boat from the dock below the Rest.
-  const dock: Pt = [hx + 4, hy + 10];
+  // Routes: the boat from the jetty below the Rest.
+  const jetty: Pt = [hx + 4, hy + 10];
   const routes = LOCATION_IDS.filter((l) => l !== "home" && v.revealed(l))
     .map((l) => {
       const ctrl = C.routes[l];
       if (!ctrl) return "";
-      return `<path class="route${v.open(l) ? "" : " closed"}" d="M${f(dock)}Q${f(ctrl)} ${f(C.at[l])}"/>`;
+      return `<path class="route${v.open(l) ? "" : " closed"}" d="M${f(jetty)}Q${f(ctrl)} ${f(C.at[l])}"/>`;
     })
     .join("");
-  const foot = `<path class="route foot" d="${smooth(C.cliffPath, false)}"/>`;
 
   // The beam: a wedge turning round the Rest, its reach lit, fog past it.
   const a = 0.13;
@@ -126,8 +125,6 @@ export function chartSvg(v: ChartView): string {
       label = `<text class="label" x="${x}" y="${y + 26}">${d.name}</text>`;
     } else if (l === "wreck") {
       mark = wreck(x, y - 2);
-    } else if (l === "shore") {
-      label = `<text class="label" x="${x - 8}" y="${y - 8}" text-anchor="end">${d.name}</text>`;
     }
     return here + mark + label;
   }).join("");
@@ -148,10 +145,9 @@ export function chartSvg(v: ChartView): string {
     <path class="shoal-edge" d="${main}"/><path class="shoal" d="${main}"/><path class="shallows" d="${main}"/>
     <g class="small"><path class="shoal-edge" d="${isles}"/><path class="shoal" d="${isles}"/><path class="shallows" d="${isles}"/></g>
     <path class="land" d="${main}${isles}"/><path class="coast" d="${main}${isles}"/>
-    <path class="sandbar" d="${smooth(C.sandbar, false)}"/>
     <path class="rocks" d="${rocks}"/>
     <g class="sound">${soundings}</g>
-    ${foot}${routes}
+    ${routes}
     <circle cx="${hx}" cy="${hy}" r="${reach}" fill="url(#ch-lit)"/>
     ${beam}
     <g mask="url(#ch-reach)"><rect class="fog" width="${W}" height="${H}"/><rect width="${W}" height="${H}" filter="url(#ch-fog)"/></g>

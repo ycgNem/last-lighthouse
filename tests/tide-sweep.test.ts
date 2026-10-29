@@ -4,10 +4,14 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { describe, expect, it } from "vitest";
 import { BALANCE } from "../src/data/balance";
-import type { LocationId } from "../src/data/ids";
+import { NPC_IDS, type LocationId } from "../src/data/ids";
+import { GEAR } from "../src/data/items";
+import { PROJECTS } from "../src/data/lighthouse";
 import { LOCATIONS } from "../src/data/locations";
 import { NODES } from "../src/data/nodes";
+import { NPCS } from "../src/data/npcs";
 import { TIDE, WATER_DEPTH } from "../src/data/tide";
+import { findPlots, STATION_TARGET, type Plot } from "../src/world/home/Plot";
 import { GlbLevel } from "../src/world/LevelLoader";
 
 // The "never trapped by the tide" sweep (GDD §6). Every spot you can stand on
@@ -16,7 +20,8 @@ import { GlbLevel } from "../src/world/LevelLoader";
 // a wall, swim (feet under the surface, no jumping, only onto an edge below
 // your middle), and after a few seconds of swimming get carried to the nearest
 // anchor. Anywhere you can get to at some tide must lead back to the landing at
-// low tide *and* at high tide, in every state progression leaves the level in.
+// low tide *and* at high tide, in every state progression leaves the level in
+// (home's: its plots in ruins, rising and rebuilt).
 // Buoyant crates, the rope ladder and long jumps are left out, so the check is
 // pessimistic about getting home.
 
@@ -180,8 +185,9 @@ function sweep(level: GlbLevel) {
     return out;
   };
   const fmt = (list: Spot[]) => list.slice(0, 8).map((s) => `(${s.x.toFixed(1)}, ${s.y.toFixed(2)}, ${s.z.toFixed(1)})`);
-  /** True if you can stand somewhere you reach with `p` within `range` of your eyes. */
-  const within = (p: THREE.Vector3, range: number) => spots.some((s, k) => reachable[k] && Math.hypot(s.x - p.x, s.y + EYE - p.y, s.z - p.z) <= range);
+  /** True if you can stand somewhere you reach with `p` within `range` of your eyes (and, with `dry`, out of the water at high tide). */
+  const within = (p: THREE.Vector3, range: number, dry = false) =>
+    spots.some((s, k) => reachable[k] && (!dry || TIDE.highLevel - s.y < WATER_DEPTH.swim) && Math.hypot(s.x - p.x, s.y + EYE - p.y, s.z - p.z) <= range);
   return {
     inverted,
     spots: spots.length,
@@ -190,6 +196,18 @@ function sweep(level: GlbLevel) {
     trappedHigh: fmt(trapped(high)),
     within,
   };
+}
+
+/** GatherNode's reach: fishing spots are cast to from up to 10 m, wreckage is hooked from the first hook's reach, everything else is within arm's length. */
+function reach(node: keyof typeof NODES): number {
+  const kind = NODES[node].kind;
+  return kind === "fish" ? 10 : kind === "wreckage" ? GEAR.hook_rope.stats.hookRange! : 3.4 + 0.6;
+}
+
+/** False if it or anything it hangs from is hidden. */
+function shown(o: THREE.Object3D): boolean {
+  for (let p: THREE.Object3D | null = o; p; p = p.parent) if (!p.visible) return false;
+  return true;
 }
 
 /** Every combination of the progression flags the level shows or hides things for. */
@@ -219,10 +237,59 @@ describe.each(REMOTE)("tide sweep: %s", (id) => {
     level.applyFlags([...new Set(level.stateObjects.map((s) => s.flag))]);
     const r = sweep(level);
     const missed: string[] = [];
-    // GatherNode's reach: fishing spots are cast to from up to 10 m, everything else is within arm's length.
-    for (const n of level.nodes) if (!r.within(n.position, NODES[n.node].kind === "fish" ? 10 : 3.4 + 0.6)) missed.push(n.node);
+    for (const n of level.nodes) if (!r.within(n.position, reach(n.node))) missed.push(n.node);
     const at = new THREE.Vector3();
     for (const it of level.interacts) if (!r.within(it.object.getWorldPosition(at), it.range + 0.6)) missed.push(it.id);
     expect(missed).toEqual([]);
   }, 60_000);
+});
+
+/** Lantern's Rest as a save leaves it (HomeLevel.applyProgress): every plot `progress` of the way rebuilt, the boats moored once the jetty stands. */
+async function rest(progress: number): Promise<{ level: GlbLevel; plots: Plot[]; r: ReturnType<typeof sweep> }> {
+  const level = await loadLevel("home");
+  const plots = [...findPlots(level.root).values()];
+  for (const p of plots) p.set(progress);
+  for (const b of level.buoys) b.object.visible = progress >= 1;
+  level.rebuildCollider(
+    plots.flatMap((p) => p.colliders()),
+    (m) => plots.some((p) => p.skipsCollider(m)),
+  );
+  return { level, plots, r: sweep(level) };
+}
+const rests = new Map<number, ReturnType<typeof rest>>();
+const restAt = (progress: number) => rests.get(progress) ?? rests.set(progress, rest(progress)).get(progress)!;
+
+describe("tide sweep: home", () => {
+  it.each([
+    ["in ruins", 0],
+    ["rising", 0.5],
+    ["rebuilt", 1],
+  ])("every spot you can reach leads back to the landing at low and at high tide, the plots %s", async (when, progress) => {
+    const { r } = await restAt(progress);
+    expect(r.inverted, `collision wound inside out (floors must face up), ${when}`).toEqual([]);
+    expect(r.reachable, `the landing should open onto most of the Rest, ${when}`).toBeGreaterThan(r.spots * 0.3);
+    expect(r.trappedLow, `stuck at low tide, ${when}`).toEqual([]);
+    expect(r.trappedHigh, `stuck at high tide, ${when}`).toEqual([]);
+  }, 60_000);
+
+  it("every board, station, villager and node can be reached, and the drift hooked from dry land, before and after the rebuilding", async () => {
+    const missed: string[] = [];
+    const at = new THREE.Vector3();
+    const needs = new Map(LOCATIONS.home.nodes.map((s) => [s.node, s.needsProject]));
+    for (const progress of [0, 1]) {
+      const { level, plots, r } = await restAt(progress);
+      const when = progress ? "rebuilt" : "in ruins";
+      for (const it of level.interacts) if (shown(it.object) && !r.within(it.object.getWorldPosition(at), it.range + 0.6)) missed.push(`${it.id}, ${when}`);
+      for (const n of level.nodes) if ((progress || !needs.get(n.node)) && !r.within(n.position, reach(n.node))) missed.push(`${n.node}, ${when}`);
+      for (let l = 0; level.points.has(`drift_${l}_0`); l++) {
+        let near = false;
+        for (let k = 0; !near && level.points.has(`drift_${l}_${k}`); k++) near = r.within(level.points.get(`drift_${l}_${k}`)!, GEAR.hook_rope.stats.hookRange!, true);
+        if (!near) missed.push(`drift lane ${l}, ${when}`);
+      }
+      if (!progress) continue;
+      for (const p of plots) if ((PROJECTS[p.id].unlocksStation || PROJECTS[p.id].unlocksOffshore) && !(p.station && r.within(p.station.localToWorld(at.copy(STATION_TARGET.at)), STATION_TARGET.range + 0.6))) missed.push(`${p.id}'s station`);
+      for (const id of NPC_IDS) if (!r.within(level.root.getObjectByName(NPCS[id].marker)!.getWorldPosition(at), 3.2 + 0.6)) missed.push(id);
+    }
+    expect(missed).toEqual([]);
+  }, 120_000);
 });

@@ -1,9 +1,9 @@
-import type { LocationId, ProjectId, StageIndex, StationId } from "../data/ids";
-import { GEAR } from "../data/items";
-import { DEFAULT_STATIONS, PROJECTS, STAGES, type Requirements, type StageDef } from "../data/lighthouse";
-import { LOCATION_IDS } from "../data/ids";
-import { LOCATIONS } from "../data/locations";
 import { BALANCE } from "../data/balance";
+import { LOCATION_IDS, type GearId, type LocationId, type NpcId, type StageIndex, type StationId } from "../data/ids";
+import { GEAR, type GearSlot } from "../data/items";
+import { DEFAULT_STATIONS, PROJECTS, STAGES, type Requirements, type StageDef } from "../data/lighthouse";
+import { LOCATIONS } from "../data/locations";
+import { NPCS } from "../data/npcs";
 import type { GameState } from "../state/GameState";
 import { addItem, available, removeAll } from "./inventory";
 import { addXp, skillLevel } from "./skills";
@@ -13,6 +13,8 @@ export interface Missing {
   keyItems: string[];
   projects: string[];
   flags: string[];
+  /** The lighthouse stage still to reach, if any. */
+  stage: StageIndex | null;
 }
 
 export function missingFor(state: GameState, req: Requirements): Missing {
@@ -21,11 +23,31 @@ export function missingFor(state: GameState, req: Requirements): Missing {
     keyItems: (req.keyItems ?? []).filter((k) => !state.keyItems.includes(k)),
     projects: (req.projects ?? []).filter((p) => !state.projects.includes(p)),
     flags: (req.flags ?? []).filter((f) => !state.flags.includes(f)),
+    stage: req.stage !== undefined && state.stage < req.stage ? req.stage : null,
   };
 }
 
 export function isMet(m: Missing): boolean {
-  return m.items.length + m.keyItems.length + m.projects.length + m.flags.length === 0;
+  return m.items.length + m.keyItems.length + m.projects.length + m.flags.length === 0 && m.stage === null;
+}
+
+/** Owns this gear, or better in the same slot. */
+export function hasGear(owned: Iterable<GearId>, need: GearId): boolean {
+  for (const g of owned) if (g === need || (GEAR[g].slot === GEAR[need].slot && GEAR[g].tier > GEAR[need].tier)) return true;
+  return false;
+}
+
+/** The best gear owned for a slot, or null. */
+export function bestGear(owned: Iterable<GearId>, slot: GearSlot): GearId | null {
+  let best: GearId | null = null;
+  for (const g of owned) if (GEAR[g].slot === slot && (!best || GEAR[g].tier > GEAR[best].tier)) best = g;
+  return best;
+}
+
+/** Whether someone has come home to the Rest yet. */
+export function isHome(state: GameState, id: NpcId): boolean {
+  const a = NPCS[id].arrives;
+  return "stage" in a ? state.stage >= a.stage : state.projects.includes(a.project);
 }
 
 export function nextStage(state: GameState): StageDef | undefined {
@@ -53,16 +75,6 @@ export function maxHp(state: GameState): number {
   let hp = BALANCE.player.baseHp + (skillLevel(state, "combat") - 1) * BALANCE.player.hpPerCombatLevel;
   for (const g of state.gear) hp += GEAR[g].stats.maxHp ?? 0;
   return hp;
-}
-
-export function completeProject(state: GameState, id: ProjectId): boolean {
-  if (state.projects.includes(id)) return false;
-  const def = PROJECTS[id];
-  if (!isMet(missingFor(state, def.requires))) return false;
-  removeAll(state, def.requires.items ?? []);
-  state.projects.push(id);
-  if (def.xp) addXp(state, def.xp.skill, def.xp.amount);
-  return true;
 }
 
 /** Performs the next lighthouse stage if requirements are met at `here`. */

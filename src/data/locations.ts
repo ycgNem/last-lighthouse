@@ -1,8 +1,10 @@
-import type { EnemyId, LocationId, NodeId, StageIndex, TideReq } from "./ids";
+import type { EnemyId, LocationId, NodeId, ProjectId, StageIndex, TideReq } from "./ids";
 
 export interface NodeSpawn {
   node: NodeId;
   count: number;
+  /** Only there once this plot is rebuilt (a fishing spot off the jetty's end). */
+  needsProject?: ProjectId;
 }
 
 export interface EnemySpawn {
@@ -36,39 +38,22 @@ export interface LocationDef {
 export const LOCATIONS: Record<LocationId, LocationDef> = {
   home: {
     name: "Lantern's Rest",
-    blurb: "Home. The light keeps the Gloom away.",
+    blurb: "Home. The light keeps the Gloom away, and the tide brings the drowned world into the cove.",
     revealedAtStage: 0,
     safe: true,
     model: "locations/home.glb",
-    nodes: [],
+    // The cove's fishing and its wreck field; what drifts in is in data/salvage.ts.
+    nodes: [
+      { node: "fish_silverfin", count: 1 },
+      { node: "fish_glowgill", count: 1, needsProject: "jetty" },
+      { node: "sunken_boat", count: 1 },
+      { node: "old_pilings", count: 2 },
+      { node: "boiler", count: 1 },
+    ],
     enemies: [],
     fog: [60, 220],
     rain: 0.35,
     gloom: 0,
-  },
-  shore: {
-    name: "Gullwash Shore",
-    blurb: "Driftwood, kelp and crabs. A sandbar runs out to an islet at low tide.",
-    revealedAtStage: 0,
-    safe: false,
-    model: "locations/shore.glb",
-    nodes: [
-      { node: "driftwood", count: 6 },
-      { node: "scrap_pile", count: 3 },
-      { node: "kelp_bed", count: 4 },
-      { node: "glass_bed", count: 3 },
-      { node: "supply_crate", count: 1 },
-      { node: "sealed_cache", count: 1 },
-      { node: "fish_silverfin", count: 1 },
-      { node: "fish_glowgill", count: 1 },
-    ],
-    enemies: [
-      { enemy: "brine_crab", count: 4, tide: "low" },
-      { enemy: "brine_crab", count: 2, tide: "high" },
-    ],
-    fog: [45, 160],
-    rain: 0.5,
-    gloom: 1,
   },
   wreck: {
     name: "Wreck of the Meridian",

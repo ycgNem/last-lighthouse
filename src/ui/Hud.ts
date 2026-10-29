@@ -24,6 +24,12 @@ export interface HudView {
   dashRecharge: number;
   prompt: string | null;
   promptBlocked: boolean;
+  /** The key the prompt names (interact unless said). */
+  promptKey?: Action;
+  /** The salvage hook's crosshair: on something it can take, on something out of reach or that it can't, or reeling. */
+  reticle: "hook" | "far" | "blocked" | "reel" | null;
+  /** Build mode's hotbar: what you can place, what each costs and whether you have it, and which is in hand. */
+  build: { slots: { name: string; cost: string; afford: boolean }[]; selected: number } | null;
   locationName: string;
   safe: boolean;
   food: { name: string; count: number } | null;
@@ -70,6 +76,7 @@ export class Hud {
   private readonly tideFill: HTMLDivElement;
   private readonly bannerEl: HTMLDivElement;
   private readonly promptEl: HTMLDivElement;
+  private readonly hotbar: HTMLDivElement;
   private readonly toasts: HTMLDivElement;
   private readonly hpFill: HTMLDivElement;
   private readonly hpText: HTMLDivElement;
@@ -81,6 +88,7 @@ export class Hud {
   private readonly dlgName: HTMLDivElement;
   private readonly dlgText: HTMLDivElement;
   private readonly crosshair: HTMLDivElement;
+  private lastReticle: HudView["reticle"] = null;
   private readonly hitEl: HTMLDivElement;
   private readonly ring: SVGCircleElement;
   private readonly ringWrap: HTMLDivElement;
@@ -147,6 +155,7 @@ export class Hud {
     this.ring = this.ringWrap.querySelector<SVGCircleElement>("circle.fill")!;
     this.pips = el("div", "pips", root);
     this.promptEl = el("div", "prompt", root);
+    this.hotbar = el("div", "hotbar hidden", root);
     this.toasts = el("div", "toasts", root);
 
     const vitals = el("div", "vitals", root);
@@ -251,7 +260,22 @@ export class Hud {
     text(this.place, v.locationName + (v.safe ? " · safe" : ""));
     this.place.classList.toggle("safe", v.safe);
 
-    const prompt = v.prompt ? (v.promptBlocked ? esc(v.prompt) : `<b>${esc(this.keys?.interact ?? "E")}</b> ${esc(v.prompt)}`) : "";
+    this.hotbar.classList.toggle("hidden", !v.build);
+    if (v.build) {
+      const k = this.keys;
+      const slots = v.build.slots
+        .map((s, i) => `<div class="slot${i === v.build!.selected ? " sel" : ""}${s.afford ? "" : " poor"}"><b>${i + 1}</b><span>${esc(s.name)}</span><small>${esc(s.cost)}</small></div>`)
+        .join("");
+      const keys = `<div class="hotbar-keys"><b>${esc(k?.fire ?? "LMB")}</b> place · <b>${esc(k?.rotate ?? "R")}</b> turn · <b>${esc(k?.hook ?? "RMB")}</b> pick up · <b>1-9</b> or wheel: choose · <b>${esc(k?.build ?? "B")}</b> done</div>`;
+      html(this.hotbar, `<div class="slots">${slots}</div>${keys}`);
+    }
+    if (v.reticle !== this.lastReticle) {
+      this.crosshair.classList.remove("hook", "far", "blocked", "reel");
+      if (v.reticle) this.crosshair.classList.add(v.reticle);
+      this.lastReticle = v.reticle;
+    }
+    const key = this.keys?.[v.promptKey ?? "interact"] ?? "E";
+    const prompt = v.prompt ? (v.promptBlocked ? esc(v.prompt) : `<b>${esc(key)}</b> ${esc(v.prompt)}`) : "";
     if (prompt !== this.lastPrompt) {
       this.promptEl.innerHTML = prompt;
       this.lastPrompt = prompt;

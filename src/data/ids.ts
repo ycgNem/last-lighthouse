@@ -13,6 +13,7 @@ export const ITEM_IDS = [
   "glowgill",
   "crab_meat",
   "grilled_silverfin",
+  "smoked_silverfin",
   "kelp_wrap",
   "crab_chowder",
   "glowgill_stew",
@@ -25,6 +26,9 @@ export const GEAR_IDS = [
   "boltcaster_mk1",
   "boltcaster_mk2",
   "lamplighter",
+  "hook_rope",
+  "hook_iron",
+  "hook_brass",
   "rod_basic",
   "rod_reinforced",
   "satchel_straps",
@@ -36,19 +40,25 @@ export const SKILL_IDS = ["fishing", "salvaging", "cooking", "smithing", "combat
 export type SkillId = (typeof SKILL_IDS)[number];
 
 export const NODE_IDS = [
+  // Wreckage: hooked, each throw tearing a piece off.
   "driftwood",
   "scrap_pile",
   "kelp_bed",
-  "glass_bed",
   "reinforced_wreckage",
-  "supply_crate",
-  "sealed_cache",
+  "sunken_boat",
+  "old_pilings",
+  "boiler",
+  // Opened, fished or taken with E.
   "strongbox",
   "fish_silverfin",
   "fish_glowgill",
   "lens_pedestal",
 ] as const;
 export type NodeId = (typeof NODE_IDS)[number];
+
+/** What drifts into the cove at home (src/data/salvage.ts). */
+export const FLOTSAM_IDS = ["planks", "drum", "kelp_mat", "bottles", "barrel", "log", "ship_crate"] as const;
+export type FlotsamId = (typeof FLOTSAM_IDS)[number];
 
 export const ENEMY_IDS = [
   "brine_crab",
@@ -59,13 +69,14 @@ export const ENEMY_IDS = [
 ] as const;
 export type EnemyId = (typeof ENEMY_IDS)[number];
 
-export const LOCATION_IDS = ["home", "shore", "wreck", "beacon"] as const;
+export const LOCATION_IDS = ["home", "wreck", "beacon"] as const;
 export type LocationId = (typeof LOCATION_IDS)[number];
 
-export const PROJECT_IDS = ["forge", "dock"] as const;
+/** The Rest's buildings you rebuild (src/data/lighthouse.ts). */
+export const PROJECT_IDS = ["forge", "jetty", "cottage_1", "cottage_2", "cottage_3", "net_loft", "smokehouse"] as const;
 export type ProjectId = (typeof PROJECT_IDS)[number];
 
-export const STATION_IDS = ["hearth", "forge"] as const;
+export const STATION_IDS = ["hearth", "forge", "smokehouse", "net_loft"] as const;
 export type StationId = (typeof STATION_IDS)[number];
 
 export const NPC_IDS = ["maren", "tib", "odile", "hesk"] as const;
@@ -73,6 +84,10 @@ export type NpcId = (typeof NPC_IDS)[number];
 
 export const FLAG_IDS = ["met_maren", "guardian_defeated", "chapter1_complete"] as const;
 export type FlagId = (typeof FLAG_IDS)[number];
+
+/** Things you can place anywhere in the village (src/data/decor.ts). */
+export const DECOR_IDS = ["lantern", "brazier", "fence", "bench", "planter", "barrels", "crates", "bunting", "net_rack"] as const;
+export type DecorId = (typeof DECOR_IDS)[number];
 
 /** Lighthouse stage index: 0 Failing Light … 3 First Beacon Relit. */
 export type StageIndex = 0 | 1 | 2 | 3;

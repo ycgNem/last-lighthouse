@@ -14,6 +14,7 @@ shots.json: [{"name": "landing", "eye": [-35, 4.6, 4], "look": [-20, 4, -6], "fo
 
 Other flags: --only a,b,c (exact names)  --cols N  --tile 420x320  --az 35  --el 22
              --bg 0d1318  --ground 0|1  --show-col (draw COL_ collision boxes)
+             --hide a,b (leave out objects whose name, or a parent's, contains one: _built, BUOY_)
 """
 
 import json
@@ -161,9 +162,20 @@ if water is not None:
     wm.materials.append(wmat)
 
 helpers = {o for o in scene.objects if o.name.startswith("_")}
-# Collision boxes aren't drawn in the game.
+# Collision boxes aren't drawn in the game, nor is anything the game hides (SCATTER_ data, --hide).
+hide = [s for s in (flag("--hide") or "").split(",") if s]
+
+
+def hidden(o):
+    while o is not None:
+        if any(h in o.name for h in hide) or o.name.startswith("SCATTER_"):
+            return True
+        o = o.parent
+    return False
+
+
 for o in scene.objects:
-    if o.name.startswith("COL_") and "--show-col" not in argv:
+    if (o.name.startswith("COL_") and "--show-col" not in argv) or hidden(o):
         o.hide_render = True
         helpers.add(o)
 

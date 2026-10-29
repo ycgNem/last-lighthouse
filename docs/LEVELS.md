@@ -8,113 +8,93 @@ Design every surface against these bands:
 
 | Band | Height | Meaning |
 |---|---|---|
-| Always dry | `y ≥ 2.4` | Safe at all tides. Landing points, anchors, home. |
+| Always dry | `y ≥ 2.4` | Safe at all tides. Landing points, anchors, home's terraces. |
 | Tidal | `0.2 ≤ y < 1.8` | Walkable at low tide, flooded at high tide. Paint foam tide-line decals here. |
 | Wading | water depth 0.5–1.1 m | Move speed ×0.6, can shoot. |
 | Swimming | water depth > 1.1 m | Speed ×0.45, can't shoot, can dash; after 6 s the current carries you to the nearest `ANCHOR_*`. |
 
 Every location is a single `.glb` exported from `art/blender/locations/<id>.blend`
 with the object-naming rules in `ART_PIPELINE.md` (`COL_`, `SPAWN_`, `NODE_`,
-`ANCHOR_`, `BUOY_`, `TRIG_`, `GLOOM_`…). The game reads those empties to place
-gameplay. `tests/tide-sweep.test.ts` proves each level can't trap you: from
-anywhere you can reach, at either tide, there's a way back to the landing.
+`ANCHOR_`, `BUOY_`, `TRIG_`, `GLOOM_`, home's `PLOT_` and `FX_drift_`…). The game
+reads those empties to place gameplay. `tests/tide-sweep.test.ts` proves each
+level can't trap you: from anywhere you can reach, at either tide, there's a way
+back to the landing (at home, with the plots in ruins, rising and rebuilt).
 
 ---
 
 ## Lantern's Rest (home) — `home`
 
-Compact (≈ 90 × 70 m) rocky headland. **No enemies. Tide is cosmetic here** — the
-water rises and falls against the sea wall but never reaches a walkable surface.
+The player's base. ≈ 100 × 130 m with the arms. **No enemies, but the tide is
+real here:** the cove has a beach, flats and a wreck field the water covers and
+uncovers, so home is swept for tide traps like everywhere else. Built by
+`tools/blender/build/home_map.py`; `src/world/home/HomeLevel.ts` only layers
+progression over it (the plots rising, who's home, the boats). Game space: x east,
+z south, y up; the cove opens south.
 
 ```
-            N
-   ┌────────────────────────────┐
-   │   cliffs          LIGHTHOUSE│   lamp room (top): CHART TABLE, Maren
-   │        ╭──────╮   ( tower ) │
-   │ cottage│square│    stair    │
-   │  (S2)  │HEARTH│──── path ───┤
-   │ Odile's│ chest│  FORGE      │
-   │ house  ╰──┬───╯  (broken→)  │
-   │           │ slope           │
-   │  boat shed│                 │
-   │      ═════╪═══ DOCK ═══►BOAT│  dock: broken → repaired (stage gate)
-   └────────────────────────────┘
-            S (open sea)
+                               N (−z)
+      fields · washing · memorial               ┌─ KNOLL (y 12.5) ──┐
+   cottage_3        cottage_2   garden          │ LIGHTHOUSE ⌂ start │ lamp, Maren
+   (Ashby)          (Pell)   cottage_1 (Marsh)  └──── path ↙ ───────┘
+        FORGE ── SQUARE (y 7): hearth, chest, well
+                     │ ramp ↓ (from the bastion)
+ W    NET LOFT ── QUAY (y 4): Tib's boat on trestles ── SMOKEHOUSE          E
+ ARM        west steps ↓        │ slipway ↓        jetty steps ↓           ARM
+   │  ──────── BEACH (dry above y 1.8) ──── landing ⚓ ──── JETTY ║          │
+   │  shelf ↓ · fishing ledge · rock pool (Silverfin)          ║ boats      │
+   │        pilings · sunken boat · boiler  (bared at low tide)  ║ Glowgill  │
+    ╲              flats (low tide)                                        ╱
+      ╲__ west arm's tip              stacks ◆◆            east arm's tip _╱
+                    ↑ the drift comes in through the mouth (SSE)
+                               S (+z)
 ```
 
-- **Player spawn / respawn:** keeper's cot inside the lighthouse base (`SPAWN_player`).
-- **Cliff path** down to Gullwash Shore (`TRIG_to_shore`, west edge): walkable from
-  the very start. The boat is for *offshore* destinations once the dock is mended.
-- **Lighthouse:** 28 m tower. Spiral stair is a single ramp collider. Lamp room has
-  the **chart table** (`NODE_chart`) and lamp housing (`NODE_lamp`) — both
-  interactables. Beam pivot `FX_beam_pivot` at y ≈ 27.
-- **Hearth** (`NODE_hearth`) and **storage chest** (`NODE_storage`) in the square —
-  within 10 m of each other so preparation is quick.
-- **Forge** (`NODE_forge`): two variants, `forge_broken` / `forge_repaired`
-  (state swap via `STATE_` naming).
-- **Dock:** `dock_broken` (gaps you can't cross; the boat is pulled up on the
-  shingle) / `dock_repaired` (boat at the end). `NODE_boat` = departure.
-- **NPC marks:** `NPC_maren` (lamp room), `NPC_tib` (dock), `NPC_odile` (hearth),
-  `NPC_hesk` (forge, appears at stage 1), `NPC_family` (cottage, stage 2).
-- **Windows:** window meshes named `WIN_s0`, `WIN_s1`, `WIN_s2` — emissive turned
-  on when stage ≥ suffix.
-- Lighting: warm. Amber point lights at the hearth, lanterns along the path.
-- **Dressing** (`HomeLevel.ts`: `FIELD_WALLS`, `DRESSING`, `ODDMENTS`): dry-stone
-  field walls east, south-west and north (open-ended, inside the rescue anchors),
-  Odile's kitchen garden and scarecrow, the well, a washing line broadside to the
-  square, Tib's net frame and lobster pots by the dock head, his other boat upturned
-  on trestles, the memorial stone facing the village, gorse toward the rim, barrels
-  by the forge.
-- **Gulls** sit on three lantern posts, the memorial, the walls, the boat's keel,
-  the dock and two cottage ridges (`PERCHES`), and wheel round the lighthouse.
-
----
-
-## Gullwash Shore — `shore`
-
-Tutorial, safe-ish. ≈ 120 × 80 m. **Teaches:** movement, gathering, fishing, one
-enemy type, a tide change.
-
-```
-   open sea (deep)                      CACHE ISLET (y 2.6)
-                        ~~~~~~ sandbar (y 0.6) ~~~~~~  ◇ sealed cache
-   GLOWGILL ROCKS (y 2.5)         tide pools (kelp, glass)
-     ↑ fishing at high tide only
-   ───────────── wet sand flats (y 0.3–1.2) ─────────────
-     driftwood   scrap pile   crab flats (3–4 Brine Crabs)
-   ───────────── dry beach & dunes (y 2.4–4) ────────────
-     LANDING JETTY (y 3.0) ⚓  fishing spot (Silverfin)  ANCHOR_dunes
-```
-
-- **Landing:** `SPAWN_landing` on the jetty, always dry.
-- **Low tide:** flats and **sandbar** exposed → walk to the cache islet (sealed
-  cache needs Salvage 6 — a visible "come back later" goal; also 2 Tidestone in a
-  plain crate there for everyone). Kelp beds and sea-glass beds on the flats.
-- **High tide:** flats flood to wading/swim depth. Sandbar gone; islet unreachable
-  except by swimming (allowed, with the current-rescue rule). **Glowgill rocks**
-  fishing spot becomes active. Crabs retreat to the dunes edge (2 crabs, more
-  aggressive).
-- **Retreat route:** dunes ridge connects every part of the beach to the jetty
-  above tide level.
-- **Anchors:** `ANCHOR_dunes_w`, `ANCHOR_dunes_e`, `ANCHOR_islet`.
-- **Nodes (respawn per visit):** 6 driftwood, 3 scrap piles, 4 kelp beds (low),
-  3 sea-glass beds (low, Salvage 2), 1 Silverfin spot (any tide), 1 Glowgill spot
-  (high, Fishing 4).
-- **Gloom:** one pocket over the islet (`GLOOM_islet`, r 3.5), shrouding the
-  sealed cache (the plain crate nearby stays clear).
-- **What the sea took:** the old coast road runs down the beach into the water,
-  its setts showing through the sand, five iron lamps leaning further the deeper
-  they stand, a milestone and a fallen fingerpost; an older wreck's ribs on the
-  east flats; rocks in the shallows where a field wall ended; a roofless croft on
-  the east dunes with one gable and its chimney; shells, weed and pebbles all
-  along the tideline. All of it is kept off the paths (`KEEP_CLEAR` in
-  `shore.py`), and the tide sweep checks it.
-- **Gulls:** `FX_perch_lamp` (the last lamp, out in the shallows, so it's empty at
-  high water), `FX_perch_lamp_bar`, and the croft's chimney and east wall.
-- **First tide change:** a new save's tide clock starts 1:00 into low tide, so the
-  first warning fires after two minutes of play (about one minute into the first
-  Gullwash trip) and the water starts rising a minute later. The tide clock only
-  runs while playing, never behind the title or pause card.
+- **Spawns:** `SPAWN_start` at the lighthouse door (a new game, a loaded save);
+  `SPAWN_landing` on the beach by the jetty (back by boat before the jetty
+  stands, and after a defeat; where the tide sweep starts); `SPAWN_jetty` at the
+  jetty's end (back by boat once it stands).
+- **Terraces:** the village at y 7 (the square on a bastion over the quay, a
+  parapet round it), the quay at y 4, the beach under the quay's sea wall, dry down
+  to the high-water line at z ≈ 27. The knoll path climbs the knoll's south flank
+  from the village. Retaining walls are mortared stone with a collision box behind
+  each face.
+- **Plots** (`PLOT_<project>`, see `ART_PIPELINE.md`): the forge on the square's
+  west side, the Marsh, Pell and Ashby cottages round the village, the net loft
+  and smokehouse on the quay, the jetty along the cove's east side. Each has its
+  ruin, its finished building and a name board (`interact: plot:<id>`). The boat
+  ties up on the east side of the jetty's T-head; the jetty's `station` mark
+  faces the berth, so "Take the boat" is there at any tide (at low water the
+  boat lies 2.7 m below the deck).
+- **People:** `NPC_maren` by the lighthouse, `NPC_tib` at the jetty's foot,
+  `NPC_odile` at the hearth, `NPC_hesk` by the forge; `PLACE_family_0_*` and
+  `PLACE_family_1_*` by the Pell and Ashby doors.
+- **The cove's salvage:** five drift lanes (`FX_drift_<lane>_<k>`) from beyond the
+  mouth to the tideline, where up to ten pieces lie washed up (`FX_strand_<n>`,
+  all above high water). The wreck field (`NODE_sunken_boat_00`,
+  `NODE_old_pilings_00/01`, `NODE_boiler_00`, 17 pieces in all) is bared at low
+  tide and whole again at every ebb.
+- **Fishing:** Silverfin in the rock pool off the fishing ledge under the west arm
+  (any tide); Glowgill off the jetty's end at high water, once it stands.
+- **Decor:** `FX_decor_<n>` outlines the village where build mode places pieces;
+  `CLEAR_<n>` circles (with a `radius`) keep the plots, doors, paths, stations and
+  people clear.
+- **The coast:** off the cove, the village's cliffs, the knoll and the arms'
+  seaward flanks run steep all the way down to a flat sea floor at y −3, swimming
+  depth at low water, so nothing out there is a shelf in the tide's reach. Sea
+  rocks stand off the cliffs, stretched up clear of high water and kept 1.8 m
+  from the shore, so you can neither climb onto one from the water nor drop onto
+  one from above. The stacks at the mouth stand in scour holes.
+- **Anchors:** the square, the quay, both ends of the beach, the fishing ledge,
+  both arms and both arm tips, and the knoll.
+- **Lighting:** warm. The hearth, the forge once it's lit, lamp posts on the
+  square, the ramp's foot, the slipway, the jetty steps and the knoll path.
+- **Gulls** on the lamp posts, the memorial, the field walls, the boat on its
+  trestles, the quay's bollards and the wall over the quay (`FX_perch_<n>`),
+  wheeling over the beach (`FX_gulls`).
+- **First tide change:** a new save starts with high water just in, the cove full
+  of drift for the first lesson with the hook; the ebb bares the wreck field about
+  when the forge goes up. The tide clock only runs while playing, never behind the
+  title or pause card.
 
 ---
 
@@ -208,19 +188,18 @@ lighthouse that went dark, a wreck's masts, a windmill, a far headland. Pieces s
 
 | Location | Enemies per visit | Expected time | Expected haul (common mats) |
 |---|---|---|---|
-| Shore | 3–4 crabs | 4–7 min | 18–30 |
+| Home (the cove) | none | as long as you like | a piece of drift every 9–16 s by the tide (the flood brings the most); 17 wreck pieces per ebb |
 | Wreck | ~4 crabs, 3 spitters, 3 wisps, 2 lurkers (high) | 7–10 min | 25–40 + brass |
 | Beacon | 2 spitters, 2 wisps, boss | 5–8 min | boss chest |
 
 What the pacing simulation (`tests/economy.test.ts`) gets for a player who
-gathers everything on the way round, on average rolls:
+hooks what's needed on the way, on average rolls:
 
-| Location | Time away | Haul |
+| Stretch | Time | Haul |
 |---|---|---|
-| Shore, low tide | 6–7 min | 16.5 timber, 10.5 scrap, 20 kelp, 9 sea glass, 6 silverfin, 7 tidestone, 6 crab |
-| Wreck | 9 min (first visit) | 13 brass, 18 scrap, 18 tidestone, 14.5 kelp, 10 timber |
+| Home, a new game to Stage 1 | 17 min | 73 timber, 39 scrap, 23 kelp, 14 sea glass, 2 brass |
+| Wreck | 8.5 min | 14 brass, 16 scrap, 14 tidestone, 4.5 kelp; back home, 15 timber, 8 scrap, 5 kelp and 4 sea glass on the beach |
 | Beacon | 7 min, with the Guardian | 14 tidestone, 6 brass |
 
-Times are on target. Hauls run about twice the early estimate, mostly kelp and
-timber: scrap is what holds Stage 1 to the second shore run. The surplus goes to
-optional gear and food; trim it if playtests show the beds feel like busywork.
+The forge stands about 5 minutes in, Stage 1 at about 16 (`src/data/pacing.ts`
+holds both). Timber is plentiful by design: what isn't rebuilt goes into decor.

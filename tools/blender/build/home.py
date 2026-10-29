@@ -253,6 +253,7 @@ def cottage(name, x, seed, wall, door, chimneys=(1,), porch=False, flowers=False
         m.plank(1.4, 0.36, 0.07, at=(-1.9, 0.4, zf + 0.35), mat=P["timber_light"], warp=0.02)
 
     ob = m.build(name, loc=(x, 0, 0), ao=0.6, ao_dist=0.9, grime=0.15, grime_h=0.8)
+    col("COL_body", (W, H, D), (0, 0, 0), ob)
     for i, wx in enumerate((-1.9, 1.9)):
         MB(seed + 10 + i).box((0.84, 0.94, 0.02), at=(wx, 1.43, zf + 0.012), mat=window, bev=0).build(f"window_{i}", parent=ob, ao=0, grime=0, ground=False)
     kit.empty("smoke", smoke, parent=ob, size=0.3)
@@ -354,6 +355,7 @@ def forge(name, x, broken):
         for k, (dx, dz) in enumerate(((0.05, -0.05), (-0.08, 0.06))):
             m.tube([(-2.6 + dx, 0.9, 2.2 + dz), (-2.45 + dx, 0.92, 2.32 + dz)], 0.018, mat=iron, segs=4)
     col("COL_anvil", (0.8, 0.9, 0.8), (-2.6, 0, 2.2), None)
+    col("COL_body", (4.0, 2.2, 3.0), (0, 0, 0), None)
 
     # Quench tub (dry when broken), tongs leaning in it.
     m.lathe([(0.0, 0.0), (0.4, 0.0), (0.42, 0.25), (0.43, 0.5), (0.39, 0.5), (0.36, 0.1), (0.0, 0.1)], at=(2.45, 0, 2.0), mat=P["timber"], segs=14, staves=0.12)
@@ -387,6 +389,7 @@ def forge(name, x, broken):
     for k in range(9):
         mm.rock(0.08 + rnd.random() * 0.05, at=(-0.5 + k * 0.125, 0.48, 1.28 + (rnd.random() - 0.5) * 0.1), mat=ember, seed=270 + k, subdiv=1, squash=0.7)
     mm.build("mouth", parent=ob, ao=0, grime=0, ground=False)
+    kit.empty("station", (0.0, 0.0, 2.6), parent=ob, size=0.3)
     if broken:
         for k, (gx, gz, s) in enumerate(((-1.4, 0.8, 0.5), (0.4, -1.0, 0.45), (1.8, 1.2, 0.6), (-1.9, -1.3, 0.55))):
             kit.place(T, "dune_grass", f"{name}_weed{k}", (gx, 2.17 if abs(gx) < 1.9 and abs(gz) < 1.4 else 0.0, gz), yaw=k * 1.7, parent=ob, scale=s)
@@ -460,63 +463,6 @@ def chest(x):
         m.ring(0.07, 0.016, at=(sx * 0.7, 0.42, 0), mat=P["rope"], roll=math.pi / 2, segs=10, tube_segs=4)
     m.box((0.12, 0.16, 0.03), at=(0, 0.5, 0.39), mat=P["brass"], bev=0.005)
     return m.build("HOME_chest", loc=(x, 0, 0), ao=0.6, ao_dist=0.4)
-
-
-# ------------------------------------------------------------------- dock
-
-DOCK_Y = 2.7  # deck top (HomeLevel DOCK_Y); planks are 0.15 m thick, centred 0.075 under it
-
-
-def dock_plank(name, x, seed, paint):
-    """One 3 x 0.95 m deck section (HomeLevel's plank box, origin at its
-    centre): four boards across the dock with gaps, nail heads over the
-    stringers."""
-    m = MB(seed)
-    rnd = m.rnd
-    for k in range(4):
-        z = -0.355 + k * 0.237
-        L = 3.0 - rnd.random() * 0.12
-        m.plank(L, 0.215, 0.06, at=((rnd.random() - 0.5) * 0.06, 0.015, z), mat=paint, warp=0.02, tint=0.9 + rnd.random() * 0.18)
-        for nx in (-1.2, 0.0, 1.2):
-            for dz in (-0.05, 0.05):
-                m.box((0.018, 0.006, 0.018), at=(nx, 0.075, z + dz), mat=P["iron"], bev=0)
-    return m.build(name, loc=(x, 0, 0), ao=0.5, ao_dist=0.2, grime=0, ground=False)
-
-
-def dock_frame(x):
-    """Everything under the deck boards, in home coordinates relative to
-    (DOCK_X, 0, 0): three stringers, a cap beam per pile pair, the piles with
-    their wet band and barnacles, cross bracing, a ladder off the end, and
-    bollards and rope on the deck edge."""
-    m = MB(280)
-    rnd = m.rnd
-    z0, z1 = 44.5, 75.5
-    for sx in (-1.2, 0.0, 1.2):
-        m.box((0.16, 0.14, z1 - z0), at=(sx, DOCK_Y - 0.2, (z0 + z1) / 2), mat=P["timber"], bev=0.015)
-    for i in range(8):
-        z = 46 + i * 4
-        m.box((3.3, 0.18, 0.24), at=(0, DOCK_Y - 0.38, z), mat=P["hull"], bev=0.02)
-        for sx in (-1.4, 1.4):
-            m.cyl(0.2, 0.23, DOCK_Y - 0.38 + 5.2, at=(sx, -5.2, z), mat=P["hull"], segs=9, bev=0.02)
-            for k in range(7):
-                a, y = rnd.random() * math.tau, -0.4 + rnd.random() * 1.9
-                bp, br = aim((math.cos(a), 0.0, math.sin(a)))
-                m.cyl(0.05, 0.015, 0.05, at=(sx + math.cos(a) * 0.2, y, z + math.sin(a) * 0.2), mat=P["barnacle"], segs=5, pitch=bp, roll=br, bev=0)
-        m.tube([(-1.4, DOCK_Y - 0.6, z), (1.4, -0.6, z)], 0.07, mat=P["hull"], segs=6)
-        m.tube([(1.4, DOCK_Y - 0.6, z), (-1.4, -0.6, z)], 0.07, mat=P["hull"], segs=6)
-    for sx in (-1.4, 1.4):
-        m.tube([(sx, 1.2, 46.2), (sx, 1.2, 73.8)], 0.06, mat=P["hull"], segs=6)
-    # Ladder down the end into the water.
-    for sx in (0.65, 1.15):
-        m.box((0.07, DOCK_Y + 1.2, 0.07), at=(sx, -1.2, z1 + 0.06), mat=P["hull"], bev=0.01)
-    for k in range(9):
-        m.cyl(0.025, 0.025, 0.5, at=(0.9, -1.0 + k * 0.4, z1 + 0.06), mat=P["timber"], segs=5, roll=ACROSS, centered=True, bev=0)
-    ob = m.build("HOME_dock_frame", loc=(x, 0, 0), ao=0.5, ao_dist=0.8, grime=0, ground=False, tideline=True)
-    for k, (bx, bz) in enumerate(((-1.38, 50.0), (1.38, 58.0), (-1.38, 66.0), (1.38, 74.0))):
-        kit.place(T, "bollard", f"dock_bollard{k}", (bx, DOCK_Y, bz), yaw=k * 1.3, parent=ob, scale=0.8)
-    kit.place(T, "rope_coil", "dock_rope0", (-1.0, DOCK_Y, 66.9), yaw=0.6, parent=ob)
-    kit.place(T, "rope_coil", "dock_rope1", (1.0, DOCK_Y, 73.2), yaw=2.0, parent=ob)
-    return ob
 
 
 # ------------------------------------------------------------------- boat
@@ -596,7 +542,7 @@ def sailboat(x):
     return m.build("HOME_sailboat", loc=(x, 0, 0), ao=0.5, ao_dist=0.6, grime=0, ground=False)
 
 
-# ------------------------------------------------------------ rocks, cliff
+# ------------------------------------------------------------------ rocks
 
 
 def rocks(x):
@@ -605,34 +551,6 @@ def rocks(x):
         m = MB(300 + i)
         m.rock(1.0, mat=P["rock"] if i % 3 else P["rock_dark"], seed=310 + i, squash=0.62 + (i % 3) * 0.08, jitter=0.24, subdiv=2, cuts=6)
         m.build(f"HOME_rock_{i}", loc=(x + i * 3.0, 0, 0), ao=0.45, ao_dist=0.6, grime=0.3, grime_h=0.5)
-
-
-CLIFF_ROWS = [(3.0, 0.0), (2.78, 0.3), (2.3, 0.5), (1.7, 0.75), (1.0, 1.0), (0.3, 1.3), (-0.5, 1.8), (-1.5, 2.4), (-2.7, 3.3), (-3.9, 4.6), (-5.3, 6.3)]
-STRATA = [P["grass"], Paint(STONE, 0x8C877C), Paint(STONE, 0x7A766D), Paint(STONE, 0x8F8A7E), Paint(STONE, 0x6F6B63),
-          Paint(STONE, 0x847F74), Paint(STONE, 0x75716A), Paint(STONE, 0x6A675F), Paint(STONE, 0x5E5B55), Paint(STONE, 0x55524D)]
-
-
-def cliff():
-    """The headland's sea cliff: a ring from the grass edge (radius 46 at
-    y 3, HomeLevel's headland) down to the seabed, in strata bands that jut
-    and recede, wet below the high-tide line and weedy under low water."""
-    m = MB(270)
-    N = 240
-    rings = []
-    for j, (y, off) in enumerate(CLIFF_ROWS):
-        ring = []
-        for i in range(N):
-            a = i / N * math.tau
-            cx, cz = math.cos(a), math.sin(a)
-            amp = 0.0 if j == 0 else 0.25 + j * 0.14
-            n = kit.fbm3(cx * 9.0, y * 0.35, cz * 9.0, seed=27 + j % 3) * amp
-            ledge = 0.0 if j == 0 else kit.fbm3(cx * 4.0, 0.5, cz * 4.0, seed=40 + j) * 0.5
-            r = 46.0 + off + n + ledge
-            ring.append((cx * r, y, cz * r))
-        rings.append(ring)
-    for j in range(len(rings) - 1):
-        m.loft([rings[j], rings[j + 1]], mat=STRATA[j], closed=True, jit=0.04)
-    return m.build("HOME_cliff", loc=(0, 0, 0), ao=0.45, ao_dist=2.5, grime=0, ground=False, tideline=True)
 
 
 # ---------------------------------------------------------------- dressing
@@ -664,8 +582,9 @@ def wall_run(x):
             sl = min(0.22 + rnd.random() * 0.45, L / 2 - u)
             for side in (-1, 1):
                 h = 0.15 + rnd.random() * 0.07
+                # Unbevelled: a run's 70-odd course stones would cost 3000 triangles with chamfers.
                 m.box((sl - 0.04, h, w / 2 - 0.03), at=(u + sl / 2, y + (0.19 - h) * rnd.random(), side * w / 4), mat=field[int(rnd.random() * len(field))],
-                      yaw=(rnd.random() - 0.5) * 0.14, pitch=(rnd.random() - 0.5) * 0.08, roll=(rnd.random() - 0.5) * 0.1, tint=0.72 + 0.28 * rnd.random(), bev=0.035)
+                      yaw=(rnd.random() - 0.5) * 0.14, pitch=(rnd.random() - 0.5) * 0.08, roll=(rnd.random() - 0.5) * 0.1, tint=0.72 + 0.28 * rnd.random(), bev=0)
             u += sl
     u = -L / 2
     while u < L / 2 - 0.05:
@@ -919,6 +838,388 @@ def gorse(x):
     return m.build("HOME_gorse", loc=(x, 0, 0), ao=0.5, ao_dist=0.4, grime=0.1)
 
 
+TAU = math.tau
+
+
+def barnacles(m, rnd, center, spread, count, size=0.045):
+    """Little volcano cones scattered about `center` (piles, hulls)."""
+    cx, cy, cz = center
+    for _ in range(count):
+        r = size * (0.6 + rnd.random() * 0.7)
+        at = (cx + (rnd.random() - 0.5) * 2 * spread[0], cy + (rnd.random() - 0.5) * 2 * spread[1], cz + (rnd.random() - 0.5) * 2 * spread[2])
+        m.lathe([(r, 0), (r * 0.75, r * 0.7), (r * 0.35, r * 0.95), (r * 0.25, r * 0.7), (0, r * 0.6)], at=at, mat=P["barnacle"], segs=6, jit=0.1)
+
+
+def seaweed_clump(m, rnd, at, count=5, length=0.7):
+    """Strands of weed lying out from a point."""
+    x0, y0, z0 = at
+    for i in range(count):
+        a = rnd.random() * TAU
+        L = length * (0.6 + rnd.random() * 0.6)
+        pts = [(x0 + math.cos(a) * L * t + math.sin(t * 6 + i) * 0.05, y0 + 0.02 + math.sin(t * math.pi) * 0.04, z0 + math.sin(a) * L * t) for t in (k / 4 for k in range(5))]
+        m.tube(pts, [0.03, 0.035, 0.03, 0.02, 0.008], mat=P["kelp"] if i % 2 else P["kelp_dark"], segs=4)
+
+
+# ------------------------------------------------------------ the Rest's plots
+# Each plot the player rebuilds has a ruin and the building that replaces it,
+# both with their origin at the plot's base, front toward +Z, and COL_ boxes
+# for what's solid. The home map (home_map.py) stands them on PLOT_ markers;
+# the game shows one or the other and raises the building as materials come
+# in. Children the code looks for: station (where you work it), smoke.
+
+JETTY_LEN = 26.0
+HEAD = 21.5  # the T-head starts here
+DECK_Y = 2.7  # the deck stands this high in the cove (home_map.py), above any tide
+
+
+def stone_patch(m, rnd, x0, x1, y0, y1, z, along_x=True, n=5, face=1):
+    """Patches where the render has fallen off a wall and the stone shows."""
+    for _ in range(n):
+        w, h = 0.25 + rnd.random() * 0.5, 0.15 + rnd.random() * 0.35
+        u = x0 + w / 2 + rnd.random() * max(0.01, x1 - x0 - w)
+        v = y0 + rnd.random() * max(0.01, y1 - y0 - h)
+        at = (u, v, z + face * 0.012) if along_x else (z + face * 0.012, v, u)
+        m.box((w, h, 0.03) if along_x else (0.03, h, w), at=at, mat=QUOIN, tint=0.75 + 0.2 * rnd.random(), bev=0.01)
+
+
+def jetty():
+    """The new jetty: a plank deck on three stringers and pile bents every 3.2 m,
+    braced in pairs, out to a T-head where the boat ties up; kerbs, bollards,
+    a ladder down the end and rope fenders on the mooring side."""
+    m = MB(800)
+    rnd = m.rnd
+    z = 0.12
+    while z < JETTY_LEN - 0.1:
+        w = 0.22 + rnd.random() * 0.03
+        half = 3.0 if z > HEAD else 1.5
+        m.box((2 * half + (rnd.random() - 0.5) * 0.08, 0.06, w), at=((rnd.random() - 0.5) * 0.04, -0.06, z), mat=P["timber"] if rnd.random() < 0.75 else P["timber_light"], bev=0.012, tint=0.8 + 0.3 * rnd.random(), yaw=(rnd.random() - 0.5) * 0.012)
+        z += w + 0.03
+    for x in (-1.2, 0.0, 1.2):
+        m.box((0.16, 0.22, JETTY_LEN - 0.1), at=(x, -0.28, JETTY_LEN / 2), mat=P["timber"], tint=0.8, bev=0.02)
+    for x in (-2.6, 2.6):
+        m.box((0.16, 0.22, JETTY_LEN - HEAD), at=(x, -0.28, (JETTY_LEN + HEAD) / 2), mat=P["timber"], tint=0.8, bev=0.02)
+    for x in (-1.55, 1.55):
+        m.box((0.12, 0.13, HEAD - 0.1), at=(x, 0.0, HEAD / 2), mat=P["timber_light"], tint=0.85, bev=0.02)
+    for x in (-3.05, 3.05):
+        m.box((0.12, 0.13, JETTY_LEN - HEAD), at=(x, 0.0, (JETTY_LEN + HEAD) / 2), mat=P["timber_light"], tint=0.85, bev=0.02)
+    m.box((6.2, 0.13, 0.12), at=(0, 0.0, JETTY_LEN - 0.05), mat=P["timber_light"], tint=0.85, bev=0.02)
+    bents = [1.6 + i * 3.2 for i in range(7)] + [HEAD + 1.0, JETTY_LEN - 0.6]
+    for k, bz in enumerate(bents):
+        wide = bz > HEAD
+        xs = (-2.8, -1.35, 1.35, 2.8) if wide else (-1.35, 1.35)
+        m.box((6.4 if wide else 3.4, 0.3, 0.26), at=(0, -0.68, bz), mat=P["timber"], tint=0.72, bev=0.025)
+        for px in xs:
+            m.cyl(0.23, 0.19, 11.5 - 0.62, at=(px, -11.5, bz), mat=P["hull"], segs=10)
+            barnacles(m, rnd, (px, -2.4, bz), (0.24, 0.5, 0.24), 3)
+        for a, b in (((-1.35, -0.85), (1.35, -3.0)), ((1.35, -0.85), (-1.35, -3.0))):
+            pts = [(a[0], a[1], bz + 0.25), (b[0], b[1], bz + 0.25)]
+            dx, dy = b[0] - a[0], b[1] - a[1]
+            m.box((math.hypot(dx, dy), 0.16, 0.08), at=((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, bz + 0.25), mat=P["timber"], roll=math.atan2(dy, dx), centered=True, tint=0.7, bev=0.015)
+    # Ladder down the end, east side of the head, into the water.
+    LX, LZ = 2.2, JETTY_LEN + 0.07
+    for x in (LX - 0.25, LX + 0.25):
+        m.box((0.07, 4.6, 0.08), at=(x, -4.5, LZ), mat=P["iron"], bev=0.01)
+    for k in range(11):
+        m.cyl(0.02, 0.02, 0.5, at=(LX, -4.2 + k * 0.38, LZ), mat=P["iron"], roll=ACROSS, centered=True, segs=6, bev=0)
+    # Rope fenders hung on the mooring side.
+    for fz in (22.6, 24.4):
+        m.tube([(3.12, 0.05, fz), (3.18, -0.3, fz)], 0.012, mat=P["rope"], segs=4)
+        m.cyl(0.11, 0.11, 0.42, at=(3.2, -0.75, fz), mat=P["rope"], segs=8, bev=0.04)
+    ob = m.build("HOME_jetty", loc=(200, DECK_Y, 0), ao=0.6, ao_dist=0.8, grime=0.0, ground=False, tideline=True)
+    for k, (bx, bz) in enumerate(((-2.75, 22.0), (2.75, 22.4), (2.75, 25.6), (-2.75, 25.6), (-1.3, 10.0))):
+        kit.place(T, "bollard", f"jetty_bollard{k}", (bx, 0, bz), yaw=k * 1.3, parent=ob, scale=0.8)
+    kit.place(T, "rope_coil", "jetty_rope0", (-1.9, 0, 24.0), yaw=0.6, parent=ob)
+    kit.place(T, "lobster_pot", "jetty_pot0", (-2.3, 0, 21.9), yaw=0.3, parent=ob)
+    c = MB(801)
+    c.box((3.1, 0.25, HEAD + 0.1), at=(0, -0.25, (HEAD + 0.1) / 2), bev=0)
+    c.box((6.2, 0.25, JETTY_LEN - HEAD), at=(0, -0.25, (JETTY_LEN + HEAD) / 2), bev=0)
+    c.build("COL_jetty", parent=ob, ao=0, grime=0, ground=False)
+    # Where you take the boat from: the mooring side, facing the berth.
+    kit.empty("station", (2.6, 0.0, 23.5), yaw=-math.pi / 2, parent=ob, size=0.3)
+    return ob
+
+
+def jetty_ruin():
+    """The old jetty, what the storms left: a stub of rotten deck at the beach,
+    a line of pile stumps walking out into the cove, a cap beam hanging off two."""
+    m = MB(810)
+    rnd = m.rnd
+    z = 0.12
+    while z < 3.0:
+        w = 0.22 + rnd.random() * 0.03
+        if rnd.random() < 0.8:
+            m.box((3.0 + (rnd.random() - 0.5) * 0.3, 0.06, w), at=((rnd.random() - 0.5) * 0.2, -0.06 - rnd.random() * 0.03, z), mat=P["driftwood_dark"], bev=0.012, tint=0.75 + 0.25 * rnd.random(), yaw=(rnd.random() - 0.5) * 0.08, roll=(rnd.random() - 0.5) * 0.06)
+        z += w + 0.03 + rnd.random() * 0.06
+    for x in (-1.2, 1.2):
+        m.box((0.16, 0.22, 3.4), at=(x, -0.28, 1.6), mat=P["hull_dark"], tint=0.8, bev=0.02)
+    # Stumps: lower and more broken the further out they stand.
+    for k, bz in enumerate([1.6 + i * 3.2 for i in range(8)]):
+        for px in (-1.35, 1.35):
+            if rnd.random() < 0.18:
+                continue
+            top = -0.7 - k * 0.32 - rnd.random() * 0.9
+            lean = (rnd.random() - 0.5) * 0.18
+            m.cyl(0.22, 0.17, top + 11.5, at=(px, -11.5, bz), mat=P["hull_dark"], segs=9, roll=lean)
+            m.cyl(0.15, 0.04, 0.22, at=(px - math.sin(lean) * (top + 11.5), top, bz), mat=P["driftwood_dark"], segs=7, roll=lean, bev=0)
+            barnacles(m, rnd, (px, top - 0.9, bz), (0.23, 0.6, 0.23), 3)
+    m.box((3.4, 0.26, 0.24), at=(0.2, -0.95, 4.8), mat=P["hull_dark"], roll=0.22, centered=True, tint=0.75, bev=0.025)
+    seaweed_clump(m, rnd, (0.3, -1.2, 6.5), count=4, length=0.7)
+    ob = m.build("HOME_jetty_ruin", loc=(232, DECK_Y, 0), ao=0.6, ao_dist=0.7, grime=0.0, ground=False, tideline=True)
+    c = MB(811)
+    c.box((3.0, 0.25, 3.0), at=(0, -0.25, 1.5), bev=0)
+    c.build("COL_jetty_ruin", parent=ob, ao=0, grime=0, ground=False)
+    return ob
+
+
+def cottage_ruin(name, x, seed, wall, chimney=1):
+    """A cottage the sea wind unroofed, on the 6 x 5 m footprint it will be
+    rebuilt on: render falling off rubble walls at broken heights, the door gap
+    and window holes, one gable and its chimney still standing, rafters fallen
+    in, slates and rubble round the foot of the walls, nettles inside."""
+    m = MB(seed)
+    rnd = m.rnd
+    c = MB(seed + 1)
+    W, D, TH = 6.0, 5.0, 0.4
+    hw, hd = W / 2, D / 2
+    weathered = Paint(wall.mat, wall.color)
+    m.box((W + 0.04, 0.42, D + 0.04), mat=QUOIN, bev=0.02, tint=0.85)
+
+    def run(u0, u1, h, fixed, along_x, face):
+        if h <= 0.05:
+            return
+        L = u1 - u0
+        size = (L, h, TH) if along_x else (TH, h, L)
+        at = ((u0 + u1) / 2, 0.42, fixed) if along_x else (fixed, 0.42, (u0 + u1) / 2)
+        m.box(size, at=at, mat=weathered, tint=0.78 + 0.12 * rnd.random(), bev=0.04)
+        c.box(size, at=at, bev=0)
+        stone_patch(m, rnd, u0, u1, 0.6, 0.42 + h - 0.2, fixed + face * TH / 2, along_x=along_x, n=2 + int(L), face=face)
+        # A ragged top: a few stones standing proud.
+        for _ in range(int(L * 2)):
+            u = u0 + rnd.random() * L
+            s = 0.18 + rnd.random() * 0.16
+            at2 = (u, 0.42 + h - 0.04, fixed) if along_x else (fixed, 0.42 + h - 0.04, u)
+            m.box((s, 0.14, TH * 0.8) if along_x else (TH * 0.8, 0.14, s), at=at2, mat=QUOIN, yaw=(rnd.random() - 0.5) * 0.2, tint=0.75 + 0.2 * rnd.random(), bev=0.03)
+
+    zf, zb = hd - TH / 2, -hd + TH / 2
+    # Front: corner piers, sills under the window holes, the door gap.
+    for u0, u1, h in ((-hw, -2.45, 2.2), (-2.45, -1.35, 0.9), (-1.35, -0.55, 1.9), (0.55, 1.35, 2.5), (1.35, 2.45, 0.9), (2.45, hw, 2.75)):
+        run(u0, u1, h + (rnd.random() - 0.5) * 0.2, zf, True, 1)
+    m.box((1.4, 0.12, 0.45), at=(0, 0.0, hd + 0.22), mat=QUOIN, bev=0.02)
+    # Back, broken low in the middle.
+    for u0, u1, h in ((-hw, -1.0, 2.3), (-1.0, 0.7, 1.2), (0.7, hw, 1.9)):
+        run(u0, u1, h + (rnd.random() - 0.5) * 0.2, zb, True, -1)
+    # The gable end still stands; the other end is down to the sill.
+    gx = chimney * (hw - TH / 2)
+    run(-hd + TH, hd - TH, 2.78, gx, False, chimney)
+    m.prism([(-hd + 0.3, 0.0), (hd - 0.3, 0.0), (0.4, 1.5), (-0.6, 1.2)], TH, at=(gx, 3.2, 0), mat=weathered, yaw=math.pi / 2, bev=0.04, tint=0.82)
+    m.box((0.9, 2.6, 0.75), at=(gx - chimney * 0.05, 3.2, 0), mat=weathered, bev=0.03, tint=0.8)
+    m.box((1.04, 0.12, 0.89), at=(gx - chimney * 0.05, 5.8, 0), mat=QUOIN, bev=0.02)
+    m.cyl(0.12, 0.1, 0.36, at=(gx - chimney * 0.05 + 0.2, 5.92, 0), mat=TERRACOTTA, segs=10, bev=0.01)
+    ox = -chimney * (hw - TH / 2)
+    run(-hd + TH, -0.4, 1.4, ox, False, -chimney)
+    run(-0.4, hd - TH, 0.8, ox, False, -chimney)
+    # Rafters fallen in, slates and rubble about the walls, weeds where the floor was.
+    for k in range(4):
+        m.box((0.13, 0.13, 3.9), at=(-1.9 + k * 1.25, 0.5 + 0.3 * k * (k % 2), -0.3), mat=P["driftwood_dark"], pitch=0.25 + 0.1 * k, roll=(rnd.random() - 0.5) * 0.4, centered=True, bev=0.02)
+    for _ in range(26):
+        a = rnd.random() * TAU
+        r = 2.4 + rnd.random() * 1.6
+        sx, sz = math.cos(a) * r * 1.15, math.sin(a) * r * 0.9
+        if abs(sx) < 0.8 and sz > 0:
+            continue
+        m.box((0.32, 0.03, 0.22), at=(sx, rnd.random() * 0.05, sz), mat=SLATE, yaw=rnd.random() * TAU, pitch=(rnd.random() - 0.5) * 0.4, tint=0.8 + 0.25 * rnd.random(), bev=0)
+    for k in range(14):
+        a = rnd.random() * TAU
+        r = 2.9 + rnd.random() * 0.8
+        m.rock(0.16 + rnd.random() * 0.16, at=(math.cos(a) * r * 1.1, 0.0, math.sin(a) * r * 0.9), mat=QUOIN if k % 2 else weathered, seed=seed + 20 + k, squash=0.7)
+    for k in range(5):
+        kit.place(T, "dune_grass", f"{name}_weed{k}", ((rnd.random() - 0.5) * 3.6, 0.42, (rnd.random() - 0.5) * 2.8), yaw=rnd.random() * 6, parent=None, scale=0.5 + rnd.random() * 0.4)
+    ob = m.build(name, loc=(x, 0, 0), ao=0.6, ao_dist=0.9, grime=0.25, grime_h=1.0)
+    for o in [o for o in bpy_objects() if o.name.startswith(f"{name}_weed") and o.parent is None]:
+        o.parent = ob
+    c.build("COL_ruin", parent=ob, ao=0, grime=0, ground=False)
+    return ob
+
+
+def net_loft(name, x, ruined):
+    """The net loft, 7 x 5 m: a rubble-stone ground floor with wide doors, a
+    tarred timber loft over it with its own doors and a hoist beam, a slate
+    roof, and a stone stair up the side. Nets hung to dry, floats, oars.
+    Ruined: the walls broken down, the loft burnt and fallen in."""
+    m = MB(820 + int(ruined))
+    rnd = m.rnd
+    c = MB(830 + int(ruined))
+    W, D, G, U = 7.0, 5.0, 2.7, 2.5  # width, depth, ground storey, upper storey
+    hw, hd = W / 2, D / 2
+    TAR = P["tar"]
+    boards = Paint(P["hull"].mat, 0x3A322B)
+    m.box((W + 0.1, 0.35, D + 0.1), mat=QUOIN, bev=0.02)
+    if ruined:
+        heights = ((-hw, -1.2, 2.1), (-1.2, 1.2, 0.0), (1.2, hw, 1.5))
+        for u0, u1, h in heights:
+            if h > 0:
+                m.box((u1 - u0, h, 0.5), at=((u0 + u1) / 2, 0.35, hd - 0.25), mat=P["stone_dark"], tint=0.8 + 0.15 * rnd.random(), bev=0.05)
+                c.box((u1 - u0, h, 0.5), at=((u0 + u1) / 2, 0.35, hd - 0.25), bev=0)
+        for fixed, h in ((-hd + 0.25, 2.4),):
+            m.box((W, h, 0.5), at=(0, 0.35, fixed), mat=P["stone_dark"], tint=0.82, bev=0.05)
+            c.box((W, h, 0.5), at=(0, 0.35, fixed), bev=0)
+        for gx, h in ((-hw + 0.25, 2.5), (hw - 0.25, 1.1)):
+            m.box((0.5, h, D - 1.0), at=(gx, 0.35, 0), mat=P["stone_dark"], tint=0.8, bev=0.05)
+            c.box((0.5, h, D - 1.0), at=(gx, 0.35, 0), bev=0)
+        # The loft's floor joists burnt through and fallen, the hoist beam down in the grass.
+        for k in range(5):
+            m.box((0.16, 0.18, 4.4), at=(-2.6 + k * 1.3, 0.6 + (k % 2) * 0.5, 0.0), mat=Paint(P["tar"].mat, 0x2A2420), pitch=(0.3 if k % 2 else -0.2), roll=(rnd.random() - 0.5) * 0.3, centered=True, bev=0.02)
+        m.box((0.2, 0.2, 3.2), at=(1.6, 0.1, hd + 1.4), mat=P["driftwood_dark"], yaw=0.6, centered=True, bev=0.02)
+        # Stair stub up the side.
+        for k in range(4):
+            m.box((1.0, 0.3 * (k + 1), 0.4), at=(hw + 0.55, 0.0, hd - 0.6 - k * 0.4), mat=P["stone_dark"], tint=0.85, bev=0.03)
+        for k in range(16):
+            a = rnd.random() * TAU
+            r = 3.2 + rnd.random() * 1.4
+            m.rock(0.16 + rnd.random() * 0.18, at=(math.cos(a) * r, 0.0, math.sin(a) * r * 0.8), mat=P["stone_dark"], seed=840 + k, squash=0.7)
+        ob = m.build(name, loc=(x, 0, 0), ao=0.6, ao_dist=0.9, grime=0.25, grime_h=1.0)
+        c.build("COL_ruin", parent=ob, ao=0, grime=0, ground=False)
+        return ob
+
+    # Ground storey: rubble stone, quoined corners, the wide doors (one leaf open).
+    m.box((W, G - 0.35, D), at=(0, 0.35, 0), mat=P["stone_dark"], bev=0.03)
+    stone_patch(m, rnd, -hw, hw, 0.5, G - 0.3, hd, n=10)
+    for sx in (-1, 1):
+        for k in range(6):
+            lx, lz = (0.5, 0.28) if k % 2 == 0 else (0.28, 0.5)
+            m.box((lx, 0.36, lz), at=(sx * (hw - lx / 2 + 0.03), 0.38 + k * 0.38, hd - lz / 2 + 0.03), mat=QUOIN, bev=0.025, jit=0.08)
+    m.box((2.4, 2.2, 0.1), at=(0, 0.35, hd + 0.0), mat=P["tar"], bev=0)
+    m.box((2.6, 0.24, 0.2), at=(0, 2.4, hd + 0.04), mat=P["timber"], bev=0.02)
+    for k in range(5):
+        m.box((0.23, 2.1, 0.06), at=(-1.12 + k * 0.24, 0.35, hd + 0.06), mat=P["timber_light"], bev=0.008, tint=0.9 + 0.08 * (k % 2))
+    for k in range(5):
+        m.box((0.23, 2.1, 0.06), at=(1.35 + 0.18 * k * math.cos(1.2), 0.35, hd + 0.2 + k * 0.22), mat=P["timber_light"], yaw=-1.2, bev=0.008, tint=0.9)
+    # Upper storey: tarred boards, jettied out a little, loft doors over the ground doors.
+    m.box((W + 0.3, 0.2, D + 0.3), at=(0, G, 0), mat=P["timber"], bev=0.02)
+    for k in range(int(W / 0.24)):
+        u = -hw - 0.1 + k * 0.24
+        m.box((0.23, U, 0.05), at=(u + 0.12, G + 0.2, hd + 0.13), mat=boards, tint=0.85 + 0.25 * rnd.random(), bev=0.006)
+        m.box((0.23, U, 0.05), at=(u + 0.12, G + 0.2, -hd - 0.13), mat=boards, tint=0.85 + 0.25 * rnd.random(), bev=0.006)
+    m.box((W + 0.2, U, D + 0.2), at=(0, G + 0.2, 0), mat=boards, bev=0.01)
+    m.box((1.5, 1.8, 0.08), at=(0, G + 0.4, hd + 0.17), mat=P["timber_pale"], bev=0.01)
+    m.box((1.7, 0.14, 0.12), at=(0, G + 2.2, hd + 0.2), mat=P["timber"], bev=0.01)
+    # Gables and the slate roof (ridge along X).
+    rise = 2.0
+    for s in (-1, 1):
+        m.prism([(-hd - 0.15, 0.0), (hd + 0.15, 0.0), (0.0, rise)], 0.3, at=(s * (hw - 0.0), G + 0.2 + U, 0), mat=boards, yaw=math.pi / 2, bev=0.02)
+    pitch = math.atan2(rise, hd + 0.15)
+    L = math.hypot(hd + 0.15, rise) + 0.45
+    cp, sp = math.cos(pitch), math.sin(pitch)
+    top = G + 0.2 + U + rise
+    for s in (-1, 1):
+        m.box((W + 0.7, 0.14, L), at=(0, top - (L / 2) * sp + 0.07 * cp, s * (L / 2) * cp + s * 0.07 * sp), mat=SLATE, pitch=s * pitch, centered=True, bev=0.02)
+        for k in range(10):
+            d = 0.25 + (L - 0.35) * k / 9
+            shade = 0.85 + rnd.random() * 0.2
+            m.box((W + 0.72, 0.035, 0.36), at=(0, top - d * sp + 0.155 * cp, s * (d * cp + 0.155 * sp)), mat=SLATE, pitch=s * (pitch - 0.06), centered=True, bev=0, tint=shade)
+    m.cyl(0.12, 0.12, W + 0.76, at=(0, top + 0.13, 0), mat=RIDGE, segs=8, roll=ACROSS, centered=True, bev=0)
+    # Hoist beam out of the front gable apex, a pulley, the rope down to a hanging net.
+    m.box((0.2, 0.2, 1.6), at=(0, G + U, hd + 0.75), mat=P["timber"], centered=True, bev=0.02)
+    m.cyl(0.14, 0.14, 0.08, at=(0, G + U - 0.2, hd + 1.4), mat=P["iron"], roll=ACROSS, centered=True, segs=12, bev=0)
+    m.tube([(0.0, G + U - 0.2, hd + 1.42), (0.0, G + 0.9, hd + 1.45)], 0.015, mat=P["rope"], segs=4)
+    m.tube([(0.0, G + 0.9, hd + 1.45), (-0.3, G + 0.3, hd + 1.4), (0.0, G - 0.4, hd + 1.5), (0.3, G + 0.3, hd + 1.4), (0.0, G + 0.9, hd + 1.45)], 0.09, mat=Paint(P["cloth"].mat, 0x4A5046), segs=6)
+    # Stone stair up the east side to a door into the loft.
+    for k in range(9):
+        y = 0.3 * (k + 1)
+        m.box((1.0, y, 0.42), at=(hw + 0.55, 0.0, hd - 0.4 - k * 0.42), mat=P["stone_dark"], tint=0.85 + 0.1 * (k % 2), bev=0.03)
+    m.box((1.0, G, 0.9), at=(hw + 0.55, 0.0, -hd + 0.45), mat=P["stone_dark"], tint=0.85, bev=0.03)
+    m.box((0.06, 1.8, 0.9), at=(hw + 0.12, G + 0.2, -hd + 0.6), mat=P["timber_pale"], bev=0.01)
+    c.box((W + 0.3, G + 0.2 + U + rise * 0.6, D + 0.3), bev=0)
+    c.box((1.0, G, D), at=(hw + 0.55, 0.0, 0.0), bev=0)
+    # Nets drying on the front wall, glass floats, oars against it, pots stacked.
+    netcol = Paint(P["cloth"].mat, 0x4A5046)
+    for k, (u, sag) in enumerate(((-2.6, 0.9), (2.4, 1.1))):
+        pts = [(u - 0.7 + t * 1.4, G - 0.15 - sag * math.sin(math.pi * t), hd + 0.13) for t in (j / 8 for j in range(9))]
+        m.tube(pts, 0.05, mat=netcol, segs=5)
+        for t in (0.2, 0.5, 0.8):
+            px = u - 0.7 + t * 1.4
+            m.uvsphere(0.08, at=(px, G - 0.25 - sag * math.sin(math.pi * t), hd + 0.2), mat=P["glass_green"] if k else P["glass_blue"], segs=8, rings=6)
+    for k in range(2):
+        m.box((0.08, 2.6, 0.05), at=(-1.9 + k * 0.25, 0.0, hd + 0.3), mat=P["timber_pale"], roll=0.12 + k * 0.04, bev=0.01)
+        m.box((0.18, 0.55, 0.03), at=(-1.9 + k * 0.25 + 0.04, 0.05, hd + 0.33), mat=P["timber_pale"], roll=0.12 + k * 0.04, bev=0.005)
+    ob = m.build(name, loc=(x, 0, 0), ao=0.6, ao_dist=0.9, grime=0.15, grime_h=0.9)
+    for k, (px, pz) in enumerate(((-hw - 0.6, 1.2), (-hw - 0.55, 0.3))):
+        kit.place(T, "lobster_pot", f"{name}_pot{k}", (px, 0.0 + 0.45 * k, pz), yaw=1.2 + k, parent=ob)
+    c.build("COL_body", parent=ob, ao=0, grime=0, ground=False)
+    kit.empty("station", (0.0, 0.0, hd + 1.4), parent=ob, size=0.3)
+    return ob
+
+
+def smokehouse(name, x, ruined):
+    """The smokehouse, 4.4 x 4 m: rubble walls, a low plank door, a steep
+    shingled roof gone black with soot and a louvred vent on top; a lean-to
+    rack of split fish curing in the open and its woodpile. Ruined: the roof
+    fallen in, the vent in the nettles, a cold firepit."""
+    m = MB(850 + int(ruined))
+    rnd = m.rnd
+    c = MB(860 + int(ruined))
+    W, D, H = 4.4, 4.0, 2.3
+    hw, hd = W / 2, D / 2
+    soot = Paint(P["tar"].mat, 0x2C2622)
+    m.box((W + 0.1, 0.3, D + 0.1), mat=QUOIN, bev=0.02)
+    if ruined:
+        for at, size in (((0, 0.3, -hd + 0.25), (W, 1.5, 0.5)), ((-hw + 0.25, 0.3, 0), (0.5, 1.1, D - 1.0)), ((hw - 0.25, 0.3, 0.3), (0.5, 0.7, D - 1.6)), ((-1.3, 0.3, hd - 0.25), (1.8, 1.2, 0.5)), ((1.5, 0.3, hd - 0.25), (1.4, 0.6, 0.5))):
+            m.box(size, at=at, mat=P["stone_dark"], tint=0.75 + 0.15 * rnd.random(), bev=0.05)
+            c.box(size, at=at, bev=0)
+        # The roof slid in: two shingled panels, the vent upside down outside.
+        for s in (-1, 1):
+            m.box((2.6, 0.08, 2.4), at=(s * 0.7, 0.9, 0.1 * s), mat=soot, roll=s * 0.5, pitch=0.2 * s, centered=True, bev=0.02)
+        m.box((0.7, 0.6, 0.7), at=(2.9, 0.0, 1.6), mat=Paint(P["timber"].mat, 0x3A2E26), yaw=0.5, roll=1.4, bev=0.02)
+        m.cyl(0.5, 0.55, 0.1, at=(0.2, 0.3, -0.2), mat=ASH, segs=12, bev=0)
+        for k in range(10):
+            a = rnd.random() * TAU
+            r = 2.6 + rnd.random() * 1.2
+            m.rock(0.14 + rnd.random() * 0.14, at=(math.cos(a) * r, 0.0, math.sin(a) * r * 0.9), mat=P["stone_dark"], seed=870 + k, squash=0.7)
+        ob = m.build(name, loc=(x, 0, 0), ao=0.6, ao_dist=0.8, grime=0.25, grime_h=1.0)
+        c.build("COL_ruin", parent=ob, ao=0, grime=0, ground=False)
+        return ob
+
+    m.box((W, H - 0.3, D), at=(0, 0.3, 0), mat=P["stone_dark"], bev=0.03)
+    stone_patch(m, rnd, -hw, hw, 0.4, H - 0.2, hd, n=7)
+    # Low plank door with strap hinges, a hatch on the side.
+    for k in range(4):
+        m.box((0.22, 1.7, 0.06), at=(-0.33 + k * 0.22, 0.3, hd + 0.02), mat=P["hull"], bev=0.008, tint=0.9 + 0.08 * (k % 2))
+    for y in (0.65, 1.6):
+        m.box((0.8, 0.06, 0.03), at=(0, y, hd + 0.06), mat=P["iron"], bev=0)
+    m.box((1.1, 0.2, 0.2), at=(0, 2.0, hd + 0.06), mat=QUOIN, bev=0.02)
+    m.box((0.06, 0.6, 0.7), at=(hw + 0.02, 1.0, -0.5), mat=P["hull"], bev=0.01)
+    # A steep hipped roof of sooty shingles to a louvred vent.
+    apex = H + 2.4
+    for k in range(9):
+        t0, t1 = k / 9, (k + 1) / 9
+        y0, y1 = H + t0 * 2.15, H + t1 * 2.15
+        r0, r1 = (1 - t0 * 0.82), (1 - t1 * 0.82)
+        m.lathe([(r0 * 3.35, y0), (r1 * 3.35, y1)], mat=soot if k > 4 else Paint(P["hull"].mat, 0x40362E), segs=4, yaw=math.pi / 4, cap=False, tint=0.85 + 0.2 * rnd.random())
+    m.box((0.7, 0.5, 0.7), at=(0, H + 2.1, 0), mat=Paint(P["timber"].mat, 0x3A2E26), bev=0.02)
+    for k in range(3):
+        for s in (-1, 1):
+            m.box((0.74, 0.05, 0.08), at=(0, H + 2.18 + k * 0.13, s * 0.36), mat=soot, pitch=0.5 * s, centered=True, bev=0)
+    m.cyl(0.62, 0.0, 0.42, at=(0, H + 2.6, 0), mat=soot, segs=4, yaw=math.pi / 4, bev=0.01)
+    # Lean-to drying rack on the west side: fish split and hung in rows.
+    rx = -hw - 0.75
+    for z in (-1.3, 1.3):
+        m.box((0.1, 2.0, 0.1), at=(rx - 0.5, 0.0, z), mat=P["timber"], bev=0.01)
+    m.box((1.4, 0.06, 3.0), at=(rx, 2.05, 0.0), mat=SLATE, roll=-0.3, centered=True, bev=0.01)
+    for y in (1.15, 1.6):
+        m.cyl(0.03, 0.03, 2.7, at=(rx - 0.2, y, 0.0), mat=P["timber_pale"], pitch=math.pi / 2, centered=True, segs=6, bev=0)
+        for k in range(9):
+            fz = -1.15 + k * 0.29
+            m.prism([(0.0, 0.0), (0.07, -0.08), (0.05, -0.34), (0.0, -0.42), (-0.05, -0.34), (-0.07, -0.08)], 0.02, at=(rx - 0.2, y - 0.02, fz), mat=Paint(P["paint_yellow"].mat, 0xB89A5A), yaw=math.pi / 2, bev=0, tint=0.8 + 0.3 * rnd.random())
+    ob = m.build(name, loc=(x, 0, 0), ao=0.6, ao_dist=0.8, grime=0.18, grime_h=0.8)
+    kit.place(T, "plank_pile", f"{name}_wood", (hw + 0.7, 0.0, 0.8), yaw=1.57, parent=ob)
+    c.box((W + 0.2, H + 1.2, D + 0.2), bev=0)
+    c.box((1.2, 2.0, 3.0), at=(rx - 0.1, 0.0, 0.0), bev=0)
+    c.build("COL_body", parent=ob, ao=0, grime=0, ground=False)
+    kit.empty("smoke", (0.0, H + 2.9, 0.0), parent=ob, size=0.3)
+    kit.empty("station", (0.0, 0.0, hd + 1.3), parent=ob, size=0.3)
+    return ob
+
+
 # ------------------------------------------------------------------ build
 
 lighthouse()
@@ -929,14 +1230,8 @@ forge("HOME_forge", 46, broken=False)
 forge("HOME_forge_broken", 56, broken=True)
 hearth(66)
 chest(72)
-dock_plank("HOME_dock_plank_0", 76, 281, P["timber"])
-dock_plank("HOME_dock_plank_1", 80, 282, P["hull"])
-dock_plank("HOME_dock_plank_2", 84, 283, P["driftwood"])
-dock_plank("HOME_dock_plank_new", 88, 284, P["timber_pale"])
-dock_frame(95)
 sailboat(104)
 rocks(112)
-cliff()
 wall_run(120)
 garden(128)
 washing_line(138)
@@ -946,5 +1241,14 @@ well(158)
 boat_trestles(164)
 memorial(172)
 gorse(178)
+jetty()
+jetty_ruin()
+cottage_ruin("HOME_cottage_a_ruin", 240, 900, WASH, chimney=1)
+cottage_ruin("HOME_cottage_b_ruin", 250, 910, OCHRE, chimney=-1)
+cottage_ruin("HOME_cottage_c_ruin", 260, 920, GREYWASH, chimney=-1)
+net_loft("HOME_net_loft", 272, False)
+net_loft("HOME_net_loft_ruin", 284, True)
+smokehouse("HOME_smokehouse", 296, False)
+smokehouse("HOME_smokehouse_ruin", 306, True)
 
 kit.save_and_export("art/blender/home/home.blend", "public/assets/models/home.glb")

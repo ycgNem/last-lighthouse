@@ -4,31 +4,55 @@ All 3D art is made in **Blender** (4.x/5.x) and exported as **glTF binary (.glb)
 Sources live in `art/blender/`, exports in `public/assets/models/`.
 
 ```
-tools/blender/build/   props.py  enemies.py  viewmodels.py  home.py  scenery.py  shore.py  wreck.py  beacon.py
+tools/blender/build/   props.py  enemies.py  viewmodels.py  home.py  home_map.py  scenery.py  wreck.py  beacon.py
 tools/blender/lib/     kit.py (shared helpers: B(), Paint, mesh builder, terrain, export)
 tools/blender/         review.py (render sheets to check by eye)  preview.py  export_gltf.py
 art/blender/
   props/props.blend              every PROP_<id> (nodes, crates, lanterns, boat…)
   enemies/enemies.blend          every MODEL_<enemy id>
-  viewmodels/viewmodels.blend    VM_boltcaster_mk1/mk2, VM_lamplighter, VM_lantern, VM_rod_*, VM_bobber
-  home/home.blend                every HOME_<name>: Lantern's Rest's buildings and dressing
+  viewmodels/viewmodels.blend    VM_boltcaster_mk1/mk2, VM_lamplighter, VM_lantern, VM_rod_*, VM_bobber,
+                                 VM_reel_<tier>, VM_grapnel_<tier> (the salvage hook: rope, iron, brass)
+  home/home.blend                every HOME_<name>: Lantern's Rest's buildings, their ruins and the dressing
   scenery/scenery.blend          every SCENE_<piece>: the drowned world on the horizon
-  locations/shore.blend  wreck.blend  beacon.blend
+  locations/home.blend  wreck.blend  beacon.blend
 public/assets/models/
-  props.glb  enemies.glb  viewmodels.glb  home.glb  scenery.glb   loaded once at boot, cloned by name
-  locations/<id>.glb                                  loaded when you travel there
+  props.glb  enemies.glb  viewmodels.glb  scenery.glb   loaded once at boot, cloned by name
+  locations/home.glb                                    loaded at boot (home is where you start)
+  locations/<id>.glb                                    loaded when you travel there
+  home.glb                                              home.blend's export; the game doesn't load it
 ```
 
-Lantern's Rest (home) is laid out in code (`src/world/home/HomeLevel.ts`) because
-so much of it changes with progression, but what you see there is modelled:
-`home.py` makes each `HOME_<name>` with its own origin, sized to the collision box
-the code already uses, and the code sets it in place. Children it looks for by
-name: `window_*` (lit one by one as the stage rises), `mouth` (the forge's
-firebox), `coals` (the hearth), `smoke` (where chimney smoke starts) and `COL_*`
-(extra collision: benches, barrels, the anvil). The village's dressing (field
-walls, kitchen garden, well, washing line, net frame, Tib's boat on trestles, the
-memorial, gorse) is placed from `FIELD_WALLS`, `DRESSING` and `ODDMENTS` in
-`HomeLevel.ts`; a `HOME_wall_run` is 4 m long, stretched a little so runs meet.
+Lantern's Rest (home) is a location like the others: `home_map.py` builds
+`locations/home.glb` from terrain heightfields, retaining walls, steps and rock
+arms, places `home.py`'s `HOME_<name>` models (`kit.load_home()`, like
+`kit.load_props()`) and lays down the markers below. `src/world/home/HomeLevel.ts`
+only layers progression over it. Each plot carries both states: `<id>_ruin` and
+`<id>_built` (the finished building, which rises as materials come in) under its
+`PLOT_` empty, and a name board. Children the game looks for by name in a
+built model: `window_*` (lit once people live there), `mouth` (the forge's
+firebox), `smoke` (where chimney smoke starts), `station` (where the forge, net
+loft or smokehouse is worked from, facing it; the jetty's faces the berth, where
+you take the boat at any tide) and `COL_*` (its collision; the jetty's is
+replaced by a growing deck while it's being built). The hearth (`INT_hearth`)
+and the dressing (field walls, kitchen garden, well, washing line, net frame,
+Tib's boat on trestles, the memorial, gorse, rocks) are placed by the map script;
+the game swaps the `EMBER` material in the hearth and the forge for a glowing
+one (the forge's once it's lit). A `HOME_wall_run` is 4 m long, stretched a
+little so runs meet.
+
+Off the cove, the map's coast runs steep all the way down to a flat sea floor at
+swimming depth (`SEA_FLOOR` in `home_map.py`). Boulders keep off cliff faces, and
+where the ground drops away a boulder becomes a sea rock: stood on the floor,
+stretched up clear of high water and kept 1.8 m off the shore. The tide sweep
+holds all of it to the "never trapped" rule.
+
+The salvage props: `PROP_flot_<kind>` for the drift (planks, drum, kelp, bottles,
+barrel, log, crate); the cove's wrecks (`PROP_wreck_boat`, `PROP_wreck_pilings`,
+`PROP_wreck_boiler`) and the Meridian's wreckage, built from `*_piece_<n>` parts
+that come off one per pull, top first; `PROP_decor_<kind>` and
+`PROP_lantern_post` for build mode; `PROP_plot_board` for the plots' name boards.
+The hook's reel clamps under the bolt-caster at its `reel` empty and the grapnel
+sits loaded at its `muzzle` empty.
 
 The drowned world on every horizon (`scenery.py`) is a set of `SCENE_<piece>`
 models, each standing on the low-water line with its foot in the sea: a row of
@@ -62,11 +86,11 @@ npm run build:art -- wreck beacon
 ```
 
 Each script writes its `.blend` and exports the `.glb`. Blender runs headless
-(`-b`), one script at a time, about a second each, so it never touches a Blender
-window you have open. The scripts find Blender via `$BLENDER`, then `blender` on
+(`-b`), one script at a time, a few seconds each (`home_map` about ten), so it
+never touches a Blender window you have open. The scripts find Blender via `$BLENDER`, then `blender` on
 PATH, then the Steam and blender.org install folders. Order matters: locations
-append props from `props.blend`, so `props` builds first (the default order does
-this).
+append props from `props.blend` (and `home_map` the `HOME_` models from
+`home.blend`), so `props` and `home` build first (the default order does this).
 
 To hand-edit instead: open the `.blend`, change it, and export with
 `npm run export:models` (exports every `.blend` whose `.glb` is older). Note that
@@ -90,7 +114,10 @@ blender -b art/blender/locations/wreck.blend --python tools/blender/review.py --
 the node/enemy counts against `src/data/locations.ts`. `tests/tide-sweep.test.ts`
 walks every level on a 1 m grid the way the player moves and fails if anywhere
 you can reach can't lead back to the landing at low *and* high tide (in every
-`STATE_` combination), or if a node or interactable can't be reached at all.
+`STATE_` combination; at home with the plots in ruins, rising and rebuilt), or if
+a node or interactable can't be reached at all. It's pessimistic: a ledge on a
+cliff face or the shoulder of a rock with nothing standable beside it counts as a
+trap, so keep cliffs steep all the way into deep water.
 
 ## Scale & orientation
 
@@ -107,23 +134,28 @@ you can reach can't lead back to the landing at low *and* high tide (in every
 |---|---|---|
 | `COL_*` | mesh | Collision only, hidden in game |
 | prop `col: 1` | mesh | Visible **and** solid (terrain, hull, decks) |
-| `SPAWN_<name>` | empty | Arrival point; its Z rotation is the facing. `landing` (boat), `path` (shore cliff path), `ladder` (wreck rope ladder) |
+| `SPAWN_<name>` | empty | Arrival point; its Z rotation is the facing. `landing` (boat), `ladder` (wreck rope ladder); at home `start` (a new game) and `jetty` (the boat, once the jetty stands) |
 | `ANCHOR_*` | empty | Where the rescue current takes you. Ground level only, never somewhere that skips a route |
-| `NODE_*` + prop `node` | empty or prop | Gather node, id from `src/data/nodes.ts`. A prop placed here is the visible node |
+| `NODE_*` + prop `node` | empty or prop | Node, id from `src/data/nodes.ts`. A prop placed here is the visible node; wreckage (hooked) comes apart by its `*_piece_<n>` children |
 | `ENEMY_*` + props `enemy`, `tide` | empty | Spawn; `tide` is `low`/`high`/`any` |
-| `INT_*` + prop `interact` (+ `range`) | any | Interactable: `boat`, `path_home`, `rope_ladder`, `beacon`… Any object with an `interact` prop works, so a `BUOY_boat` can be the boat |
+| `INT_*` + prop `interact` (+ `range`) | any | Interactable: `boat`, `rope_ladder`, `beacon`, `lamp`, `hearth`, `storage`, `plot:<project>` (a plot's board)… Any object with an `interact` prop works, so a `BUOY_boat` can be the boat |
+| `PLOT_<project>` + prop `plot` | empty | A plot you rebuild at home: its children `<id>_ruin`, `<id>_built` and `<id>_board` (see above). Turned to face the way in |
+| `NPC_<id>` | empty | Where a villager stands, facing its Z rotation |
+| `PLACE_<name>` | empty | `lighthouse` (the tower stands here, its model a child), `family_<f>_<i>` (where each of a family stands) |
+| `CLEAR_*` + prop `radius` | empty | A circle build mode keeps clear: plots, doors, paths, stations, people |
+| `SCATTER_<name>` | mesh | Hidden; one triangle per instance (first corner: where; the second: which way and how big). `SCATTER_grass` is home's grass |
 | `BUOY_*` + props `float`, `min`, `max` | mesh | Floats: origin at water + `float`, clamped to `min..max`. Its bounding box is something you can stand on |
 | `TRIG_*` + prop `event` | mesh | Hidden volume; entering fires `event` (`boss`, or `toast:<text>` for a one-time hint) |
 | `STATE_<flag>_<on\|off>` | any | Shown only when the flag is set (`on`) or unset (`off`); collision follows. E.g. `STATE_guardian_defeated_off` rubble |
-| `FX_<name>` | empty | A named point: `home_light` (beam on the horizon), `arena`, `beacon_lamp`, `ambush_<enemy id>_<n>` (spawned when you take the lens), `perch_<name>` (a gull stands on whatever is drawn just below it; it leaves when you come within 7 m or the tide reaches its feet), `gulls` (the centre the flock wheels round; default, the middle of the gathering spots) |
+| `FX_<name>` | empty | A named point: `home_light` (beam on the horizon), `arena`, `beacon_lamp`, `ambush_<enemy id>_<n>` (spawned when you take the lens), `perch_<name>` (a gull stands on whatever is drawn just below it; it leaves when you come within 7 m or the tide reaches its feet), `gulls` (the centre the flock wheels round; default, the middle of the gathering spots); at home `drift_<lane>_<k>` (each drift lane, from beyond the mouth to the tideline), `strand_<n>` (where washed-up drift lies, above high water) and `decor_<n>` (the outline build mode places inside) |
 | `GLOOM_*` + prop `radius` | empty | A Gloom pocket centred here, on the ground, spreading `radius` metres round it (between 1 and 6). Keep it clear of anchors and the landing; the count per level is in `locations.ts` |
 | prop `light: "warm"` (+ `light_offset`) | any | Adds a warm point light (lantern posts, braziers) |
 | material `TIDE_*` | material | Glows with the flood warning between the water and the high-tide line |
 | material `GLOW_*` | enemy material | Telegraph glow driven by the enemy's threat |
 | `PROP_<id>` | props.blend | Cloned by id (`assets.prop(id)`) |
 | `MODEL_<enemy id>` | enemies.blend | Cloned per enemy; named parts are animated in code (`arm_l`, `arm_r`, `heart`, `claw_*`, …) |
-| `VM_*` | viewmodels.blend | First-person models; a rod's `tip` empty anchors the fishing line |
-| `HOME_*` | home.blend | Home's buildings and dressing, placed by `HomeLevel.ts` |
+| `VM_*` | viewmodels.blend | First-person models; a rod's `tip` empty anchors the fishing line, a bolt-caster's `reel` and `muzzle` hold the hook |
+| `HOME_*` | home.blend | Home's buildings, ruins and dressing, placed by `home_map.py` |
 | `SCENE_*` | scenery.blend | Horizon set pieces, placed by `src/data/scenery.ts` |
 
 Custom properties are Object Properties → Custom Properties; they arrive in Three
@@ -170,11 +202,12 @@ as `object.userData`.
 ## Performance
 
 Budget: **under 300 draw calls** in every location with every enemy alive (the
-wreck, the worst, is at about 296). At load the game merges every static mesh
+wreck, the worst, is at about 296; home with 50 decor pieces out, at most about
+275). At load the game merges every static mesh
 that shares a material into one (`src/world/Batch.ts`), so scatter costs nothing
 extra per copy. What stays separate is anything the game moves, hides or lets
 you use: names starting `NODE_ BUOY_ STATE_ INT_ TRIG_ COL_ ENEMY_ SPAWN_ ANCHOR_
-FX_ GLOOM_`, and anything with an `interact` property. Those, and enemies and
+FX_ GLOOM_ PLOT_ PLACE_ NPC_ CLEAR_ SCATTER_`, and anything with an `interact` property. Those, and enemies and
 viewmodels, have their per-material split folded into one vertex-coloured mesh
 when they're rigid; named parts that animate stay apart.
 

@@ -18,11 +18,11 @@ export const PROLOGUE: readonly StoryCard[] = [
   },
   {
     title: "Lantern's Rest",
-    text: "One by one the lights have gone out. This one is failing: its lamp gutters, its dock is broken, and the islands nearby have turned dangerous.",
+    text: "One by one the lights have gone out. This one is failing: its lamp gutters, its forge is cold, half its houses stand empty, and the islands nearby have turned dangerous.",
   },
   {
     title: "The Keeper",
-    text: "You rowed in through the fog with a battered bolt-caster, a fishing rod and a lantern. Not a hero. Just someone willing to go out there, and come back.",
+    text: "You rowed in through the fog with a battered bolt-caster, a salvage hook, a fishing rod and a lantern. Not a hero. Just someone willing to go out there, and come back.",
   },
 ];
 

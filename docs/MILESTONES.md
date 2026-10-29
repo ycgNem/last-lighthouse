@@ -7,9 +7,11 @@ especially M1: if moving and shooting isn't fun, nothing else will save it.
 Status key: `[x]` done · `[~]` partly done (see note) · `[ ]` todo · `(B)` needs
 Blender work · `(T)` has an automated test
 
-**Where things stand (2026-10-28):** Chapter 1 is playable start to finish: home,
-the shore, the wreck by either tide route, the beacon and the Guardian, the
-relight and the chapter card. M1–M6 are done apart from the items marked below.
+**Where things stand (2026-10-29):** Chapter 1 is playable start to finish: home,
+the wreck by either tide route, the beacon and the Guardian, the relight and the
+chapter card. M8 rebuilt the first stretch around home: Gullwash Shore and
+hold-to-gather are gone; you hook what the tide brings into the Rest's cove and
+rebuild the village plot by plot. M1–M6 are done apart from the items marked below.
 M7's automated checks are in: the tide-trap sweep, the pacing simulation and the
 draw-call budget. What's left is people: three fresh playthroughs to confirm the
 pacing, hand-playing every encounter at speed, plus the cinematic upgrade beats,
@@ -69,6 +71,9 @@ speed and a perf check are still to do.*
 
 ## M2 — Gullwash Shore: gathering and meaningful tide ✅
 
+*Replaced in M8: the shore, hold-to-gather and the shore-only nodes are gone; the
+tide, wading, swimming, the rescue and the warnings carried over.*
+
 - [x] Location loader: `<id>.glb` → spawns, anchors, nodes, enemies, buoys,
       triggers, interacts, named points, state objects, warm lights, collider
 - [x] **Gullwash Shore** **(B)**: dunes, flats, sandbar to the islet, rocky spit,
@@ -115,7 +120,8 @@ loses exactly the specified amounts.
 
 ## M4 — Lighthouse upgrades and visible world change ✅ (two items open)
 
-- [x] Settlement projects: forge (glow, embers) and dock (missing planks appear)
+- [x] Settlement projects: forge (glow, embers) and dock (missing planks appear).
+      *Replaced in M8 by plots you rebuild.*
 - [~] Stage 0 → 1 (Restored Lamp): requirements panel, upgrade, banner, world
       change. *The cinematic (camera pull-out, windows lighting one by one) isn't
       built.*
@@ -187,9 +193,9 @@ completion saves and survives reload.
 ## M7 — Balance and ship check
 
 - [~] Economy pass: the simulation plays the chapter on expected yields against
-      the tide clock (Stage 1 at 16 min on the second shore run, the whole
-      chapter in about 35 min over four trips of 6–9 min) **(T)**. *The three
-      fresh playthroughs are still to do.*
+      the tide clock (the forge at about 5 min, Stage 1 at about 16 min without
+      leaving home, the whole chapter in about 35 min with two trips of 7–9 min)
+      **(T)**. *The three fresh playthroughs are still to do.*
 - [x] Performance: under 300 draw calls everywhere, every enemy alive (static
       scenery merged by material at load, rigid models folded to vertex colour,
       shadows only from what's near; the wreck peaks at 296). No image textures
@@ -207,6 +213,52 @@ completion saves and survives reload.
   - [x] The first lighthouse upgrade can actually be completed
   - [x] The boss and first beacon can be reached and finished
 - [x] README: how to run, controls, what's implemented, known limitations
+
+---
+
+## M8 — The Rest as a base: salvage and rebuilding
+
+Playtest: rebuilding at home was the best part ("repair my forge, 100% that");
+foraging wasn't intuitive; the dock was weird; the shore island didn't work; the
+maps were the weak part. So: one salvage verb, centred on home, and home as a
+base you rebuild and decorate.
+
+- [x] Data and save: hook gear in three tiers, the cove's salvage tuning, plots
+      with partial delivery, decor; save version 2 with a migration (a save at
+      the shore comes home, the dock becomes the jetty, deliveries kept) **(T)**
+- [x] Art **(B)**: drift pieces, the cove's wrecks in tearable pieces, decor
+      pieces and plot boards; a ruin and a finished building for every plot; the
+      hook's reel and grapnel per tier
+- [x] A new Lantern's Rest **(B)** (`home_map.py`): the knoll, the village terrace
+      and the quay over a cove with a beach, flats, a wreck field and two rock
+      arms; the old flat disc is gone. Home's layout comes from markers now, and
+      `HomeLevel.ts` only layers progression over it
+- [x] Plots: hand in any amount at the board; the building rises behind
+      scaffolding as you go (the jetty grows out along its length, solid as far
+      as it reaches); the flourish, the perk and the arrival when it stands
+- [x] The salvage hook: throw, reel, yank, a line; the crosshair says in reach,
+      out of reach or why not; sounds. Drift comes in along the lanes by the tide,
+      beaches on the tideline, and waits on the beach (and in the cove net) when
+      you come home; wrecks give a piece a pull and restock each low tide; the
+      Meridian's wreckage is hooked too (the Iron Hook for brass)
+- [x] Build mode (B): hotbar, green/red ghost, place, turn, pick up for a full
+      refund; instanced, solid, the nearest lit pieces casting real light
+- [x] Tests: building, decor and salvage systems; home's markers; home in the
+      tide sweep with its plots in ruins, rising and rebuilt (its outer coast
+      reshaped to pass it: steep all the way to swimming depth); pacing **(T)**
+- [x] Gullwash Shore scrapped: the location, its script and models, its chart,
+      horizon and gull data
+- [x] Browser playthrough: a fresh save to the Meridian and back (the boat is
+      taken from a berth on the jetty's head now: from the deck at low water it
+      lay out of reach), a v1 save's migration, both families home, and 50 decor
+      pieces (about 1.5 ms of CPU a frame and 210–275 draw calls, once finished
+      buildings are batched and instanced props draw rough plain materials as
+      one part)
+- [ ] Next pass: the Meridian's and Saltmere's maps rebuilt around the hook
+
+**Accept:** a fresh save's first rebuild (the forge) in about 5 minutes and
+Stage 1 in 15–25 **(T)**; home never traps you at either tide in any plot state
+**(T)**; every rebuild can be finished from guaranteed sources **(T)**.
 
 ---
 

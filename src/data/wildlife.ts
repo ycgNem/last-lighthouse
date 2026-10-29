@@ -9,7 +9,7 @@ type Range = readonly [number, number];
 
 export const GULLS = {
   /** How many wheel overhead at each place. */
-  flock: { home: 7, shore: 8, wreck: 6, beacon: 5 } as Record<LocationId, number>,
+  flock: { home: 7, wreck: 6, beacon: 5 } as Record<LocationId, number>,
   /** Circle radius (m) round the flock's centre: the FX_gulls marker, else the middle of the gathering spots. */
   radius: [10, 30] as Range,
   /** How far a circle's centre strays from the flock's, m. */

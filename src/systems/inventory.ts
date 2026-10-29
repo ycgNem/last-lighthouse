@@ -74,6 +74,12 @@ export function removeAvailable(state: GameState, item: ItemId, qty: number): vo
   }
 }
 
+/** Whether all of these would fit in the satchel as it is. */
+export function fitsAll(state: GameState, stacks: readonly ItemStack[]): boolean {
+  const trial: GameState = { ...state, satchel: state.satchel.map((s) => s && { ...s }), keyItems: [...state.keyItems] };
+  return stacks.every((s) => addItem(trial, s.item, s.qty) === s.qty);
+}
+
 export function hasAll(state: GameState, stacks: readonly ItemStack[]): boolean {
   return stacks.every((s) => available(state, s.item) >= s.qty);
 }

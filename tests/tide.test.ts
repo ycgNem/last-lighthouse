@@ -36,12 +36,13 @@ describe("tide clock", () => {
     expect(warnings).toEqual([TIDE.low - TIDE.warning, TIDE.low + TIDE.turn + TIDE.high - TIDE.warning]);
   });
 
-  it("a new game's first warning arrives early in the first trip", () => {
+  it("a new game opens on a full cove, and the ebb bares the wreck field a few minutes in", () => {
     const first = readTide(TIDE.newGameOffset, TIDE);
-    expect(first.phase).toBe("low");
+    expect(first.phase).toBe("high");
     expect(first.warning).toBe(false);
-    const secondsToWarning = first.phaseTimeLeft - TIDE.warning;
-    expect(secondsToWarning).toBeGreaterThanOrEqual(60);
-    expect(secondsToWarning).toBeLessThanOrEqual(180);
+    // Low water arrives around the first rebuild: something new to hook.
+    const toLow = first.phaseTimeLeft + TIDE.turn;
+    expect(toLow).toBeGreaterThanOrEqual(180);
+    expect(toLow).toBeLessThanOrEqual(360);
   });
 });

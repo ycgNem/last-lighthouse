@@ -273,6 +273,8 @@ def boltcaster(name, x, tier):
 
     ob = m.build(name, loc=(x, 0, 0), ground=False, grime=0.0, ao=0.6, ao_dist=0.04, smooth=30)
     kit.empty("muzzle", (0, AXIS, zm), parent=ob, size=0.05)
+    # Where the salvage hook's line reel clamps on, under the forestock.
+    kit.empty("reel", (0, -0.035, zh - 0.12), parent=ob, size=0.03)
     return ob
 
 
@@ -395,6 +397,81 @@ def bobber():
     return m.build("VM_bobber", loc=(2.0, 0, 0), ground=False, grime=0.0, ao=0.3, ao_dist=0.02, smooth=40)
 
 
+# ------------------------------------------------------------ salvage hook
+# The bolt-caster fires a grapnel on a line from a reel under its forestock
+# (src/gather/Hook.ts). Three tiers, like the gear: rope, iron, brass.
+
+
+def grapnel(name, x, tier):
+    """The grapnel, eye toward you (its origin, where the line ties on), tines
+    forward down -Z and curving back. Rope: three hand-forged prongs, the shank
+    bound in tarred twine. Iron: four barbed tines. Brass: four flared brass
+    tines on an iron shank, a band of rivets at the crown."""
+    m = MB(140 + tier)
+    tine = (P["iron"], P["iron_light"], P["brass"])[tier - 1]
+    shank = P["iron"] if tier < 3 else Paint(IRON, 0x2E3238)
+    n = 3 if tier == 1 else 4
+    L = 0.075 + 0.005 * tier
+    m.cyl(0.0042, 0.0048, L, at=(0, 0, 0), mat=shank, segs=8, pitch=FWD, bev=0.0008)
+    m.ring(0.0085, 0.0021, at=(0, 0, 0.007), mat=shank, segs=12, tube_segs=4, roll=ACROSS)
+    m.cyl(0.0072, 0.0055, 0.012, at=(0, 0, -L + 0.006), mat=tine, segs=10, pitch=FWD, centered=True, bev=0.001)
+    if tier == 1:
+        for k in range(7):
+            m.ring(0.0052, 0.0013, at=(0, 0, -0.012 - k * 0.0045), mat=Paint(CLOTH, 0x3A3026), pitch=FACING, segs=10, tube_segs=3)
+    if tier == 3:
+        for k in range(6):
+            a = k / 6 * math.tau
+            m.uvsphere(0.0012, at=(math.cos(a) * 0.0062, math.sin(a) * 0.0062, -L + 0.004), mat=P["gilt"], segs=6, rings=4)
+    flare = (0.03, 0.033, 0.038)[tier - 1]
+    for k in range(n):
+        a = k / n * math.tau + (math.pi / 2 if n == 3 else math.pi / 4)
+        ca, sa = math.cos(a), math.sin(a)
+        pts, radii = [], []
+        for j in range(7):
+            t = j / 6
+            r = 0.005 + flare * math.sin(t * math.pi * 0.62)
+            z = -L - 0.004 * math.sin(t * math.pi) + t * t * 0.046
+            pts.append((ca * r, sa * r, z))
+            radii.append(0.0042 - t * 0.0028)
+        m.tube(pts, radii, mat=tine, segs=6)
+        if tier > 1:
+            # A barb inside each point.
+            tx, ty, tz = pts[-2]
+            m.cyl(0.0016, 0.0, 0.009, at=(tx * 0.88, ty * 0.88, tz - 0.002), mat=tine, segs=5, pitch=0.6, yaw=-a, bev=0)
+    return m.build(name, loc=(x, 0, 0.5), ground=False, grime=0.0, ao=0.4, ao_dist=0.015, smooth=35)
+
+
+def reel(name, x, tier):
+    """The line reel clamped under the forestock: a drum of line between two
+    cheeks, a crank on your side, a clamp up to the stock. Rope: oak cheeks and
+    hemp. Iron: iron cheeks and tarred line. Brass: brass cheeks, a ratchet
+    pawl and pale silk line. Its origin is the clamp's top."""
+    m = MB(150 + tier)
+    cheek = (OAK, GUNMETAL, P["brass"])[tier - 1]
+    line = (Paint(CLOTH, 0xB59A6A), Paint(CLOTH, 0x3E352C), Paint(CLOTH, 0xE2DCCB))[tier - 1]
+    fit = P["iron_light"] if tier < 3 else P["brass"]
+    r = 0.026 + 0.002 * tier
+    c = (0, -0.012 - r, 0)
+    m.box((0.012, 0.014, 0.05), at=(0, -0.014, 0), mat=fit, centered=False, bev=0.0015)
+    m.box((0.03, 0.004, 0.052), at=(0, -0.002, 0), mat=fit, centered=True, bev=0.001)
+    for sgn in (-1, 1):
+        m.cyl(r, r, 0.004, at=(sgn * 0.017, c[1], c[2]), mat=cheek, segs=24, roll=ACROSS, centered=True, bev=0.001)
+        m.box((0.004, r + 0.006, 0.012), at=(sgn * 0.017, c[1], c[2]), mat=fit, centered=False, bev=0.0008)
+    m.cyl(r - 0.006, r - 0.006, 0.03, at=c, mat=line, segs=20, roll=ACROSS, centered=True, bev=0)
+    for k in range(5):
+        m.ring(r - 0.0055, 0.0011, at=(-0.012 + k * 0.006, c[1], c[2]), mat=line, roll=ACROSS, segs=20, tube_segs=3, tint=0.85)
+    m.cyl(0.0045, 0.0045, 0.042, at=c, mat=fit, segs=10, roll=ACROSS, centered=True, bev=0.0008)
+    # Crank on the left, toward the lantern hand.
+    arm_end = (-0.024, c[1] - r * 0.7, c[2] + 0.004)
+    m.tube([(-0.021, c[1], c[2]), arm_end], 0.0025, mat=fit, segs=5)
+    m.cyl(0.0042, 0.0038, 0.014, at=(arm_end[0] - 0.007, arm_end[1], arm_end[2]), mat=EBONY if tier == 3 else P["timber_pale"], roll=ACROSS, centered=True, segs=8, bev=0.001)
+    if tier == 3:
+        m.box((0.004, 0.003, 0.016), at=(0.02, c[1] + r * 0.6, c[2] - r * 0.4), mat=fit, pitch=0.5, centered=True, bev=0.0006)
+    # The line leaves the drum's top for the muzzle.
+    m.tube([(0, c[1] + r - 0.006, c[2] - 0.006), (0, -0.006, -0.05)], 0.0012, mat=line, segs=4)
+    return m.build(name, loc=(x, 0, 0.8), ground=False, grime=0.0, ao=0.45, ao_dist=0.015, smooth=35)
+
+
 boltcaster("VM_boltcaster_mk1", -1.0, 1)
 boltcaster("VM_boltcaster_mk2", -1.5, 2)
 boltcaster("VM_lamplighter", -2.0, 3)
@@ -402,5 +479,8 @@ lantern()
 rod("VM_rod_basic", 1.5, False)
 rod("VM_rod_reinforced", 1.7, True)
 bobber()
+for tier, gid in enumerate(("rope", "iron", "brass"), start=1):
+    grapnel(f"VM_grapnel_{gid}", -1.0 + tier * 0.3, tier)
+    reel(f"VM_reel_{gid}", -1.0 + tier * 0.3, tier)
 
 kit.save_and_export("art/blender/viewmodels/viewmodels.blend", "public/assets/models/viewmodels.glb")

@@ -12,8 +12,8 @@ DOM + CSS). Only add a dependency when it clearly earns its place.
    live in `src/data/*.ts` as typed `const` tables. `validateData()` checks
    references and progression reachability on every test run and in dev at boot.
 3. **Levels come from Blender.** The game reads named objects in each `.glb`
-   (`SPAWN_`, `NODE_`, `COL_`…) instead of hard-coding positions. See
-   `ART_PIPELINE.md`.
+   (`SPAWN_`, `NODE_`, `COL_`, home's `PLOT_` and `FX_drift_`…) instead of
+   hard-coding positions, home included. See `ART_PIPELINE.md`.
 4. **Systems talk through the event bus**, not by reaching into each other.
    (`bus.emit("skill:levelUp", …)` → HUD toast, audio sting, quest check.)
 5. **One `GameState`** object is the whole save. Runtime-only objects (meshes,
@@ -50,11 +50,18 @@ src/
     chart.ts              the journal's sea chart: coast, islands, the drowned
                           town, dead lights, routes, soundings
     villagers.ts          which Polyfork character each NPC is
+    salvage.ts            the cove: flotsam kinds, the drift by tide, the hook,
+                          the beach and the net while you're away
+    decor.ts              build mode's pieces: cost, footprint, solid, lit
     pacing.ts             the pacing simulation's player and the GDD's targets
     validate.ts           integrity + reachability (softlock) checks
   state/GameState.ts      the save shape + createNewGame()
   systems/                ← pure logic (no three)
     tide.ts inventory.ts skills.ts crafting.ts progression.ts quests.ts
+    salvage.ts            drift rolls, the wreck field's pieces per tide, what
+                          drifts in while you're away, hook stats by gear and skill
+    building.ts           a plot's partial delivery (satchel and chest), progress
+    decor.ts              where a piece may stand, its cost and its refund
     economy.ts            plays the chapter on expected yields, trip by trip
     guide.ts              where the materials you still need can be found now
     resolution.ts         the auto resolution: steps down on slow frames, and
@@ -62,16 +69,21 @@ src/
   physics/StaticCollider.ts   merged BVH: capsule resolve, rays, ground height
   player/
     PlayerController.ts   movement, jump (coyote time), dash, water states, rescue
-    Viewmodel.ts          first-person weapon, lantern and rod (own scene)
+    Viewmodel.ts          first-person weapon (the hook's reel and grapnel on it),
+                          lantern and rod (own scene)
   world/
     Level.ts              the Level interface every location implements
     LevelLoader.ts        Blender .glb → GlbLevel (markers per ART_PIPELINE.md)
-    Batch.ts              merges static scenery by material at load (draw calls)
+    Batch.ts              merges static scenery by material at load, and home's
+                          buildings once they stand; instanced props' parts (draw calls)
     Heights.ts            per-level seabed and roof heights, baked from collision
     Gloom.ts              Gloom pockets: the cloud, the chill, burning off
-    home/HomeLevel.ts     Lantern's Rest, laid out in code, changes with progress;
-                          its buildings come from home.glb
-    home/Headland.ts      the painted grass top; home/Villager.ts posed Polyfork people
+    home/HomeLevel.ts     Lantern's Rest: locations/home.glb (a GlbLevel) with
+                          progression layered over it: plots, people, boats, fires
+    home/Plot.ts          a plot's ruin, its building rising behind scaffolding
+                          (a clipping plane; the jetty grows a deck), its board
+    home/Decor.ts         placed decor, instanced per kind; build mode's ghost
+    home/Villager.ts      posed Polyfork people
     Lighthouse.ts         tower, beam rig, the distant beam seen from away
     Water.ts              Gerstner sea: depth colour, foam, glints, ripples, rain rings
     Sky.ts                sky dome, lights, fog, the environment map
@@ -81,18 +93,23 @@ src/
   enemies/                Enemy base + BrineCrab, DrownedSpitter, LanternWisp,
                           TideLurker, WreckGuardian; procedural part animation
   combat/Projectiles.ts   pooled bolts, orbs and mortars
-  gather/                 GatherNode (hold to gather), Fishing (cast, bite, catch)
+  gather/                 Hook (throw, reel, yank; the line), Flotsam (the drift:
+                          lanes, sway, beaching, pickup), Wreckage (pieces off
+                          per pull, restock), GatherNode (crates, key items,
+                          fishing spots), Fishing (cast, bite, catch)
   fx/                     Effects (particles, rings, cones), Loot (sparkles, pickups),
                           Post (bloom), Rain (GPU streaks), sprite (soft dot)
   audio/Sfx.ts            synthesised sounds, HRTF positional cues, ambience
   ui/
     Hud.ts hud.css        tide, objective, prompt, health, dash, compass, boss bar,
-                          threat pips, toasts, banners, dialogue, fades
-    Menus.ts menus.css    storage, stations, repairs, lighthouse, chart, journal,
+                          threat pips, the hook's reticle, build mode's hotbar,
+                          toasts, banners, dialogue, fades
+    Menus.ts menus.css    storage, stations, plots, lighthouse, chart, journal,
                           settings, trip and defeat summaries
     chart.ts              draws the sea chart as one SVG
 tests/                    vitest: systems, data/softlock, tide, exported levels,
-                          the tide-trap sweep, the economy/pacing simulation
+                          the tide-trap sweep (home's plots in every state),
+                          building, decor, the economy/pacing simulation
 tools/
   build-art.ts            runs tools/blender/build/*.py in headless Blender
   export-models.ts        exports hand-edited .blend files
@@ -110,13 +127,15 @@ main.ts
        ├─ state: GameState            loaded from Save or createNewGame()
        ├─ bus, input, hud, menus, sfx, assets
        ├─ level: HomeLevel | GlbLevel  swapped by enter() during a travel fade
-       │    └─ nodes (GatherNode[]), encounters (Encounters), buoys, triggers
-       ├─ player, viewmodel, fishing, projectiles, effects, loot
+       │    └─ nodes (GatherNode[]), wrecks (Wreck[]), flotsam (home), encounters,
+       │       buoys, triggers
+       ├─ player, viewmodel, hook, fishing, projectiles, effects, loot
        └─ beams: home lighthouse, the distant one, the relit beacon
 
 update(dt ≤ 1/60, several per frame on a slow one), while playing:
   tide clock → buffs → player → encounters → projectiles → loot → nodes
-  → triggers → interaction (focus, gather, fish, talk, stations) → combat → food
+  → wrecks, flotsam → the hook (or build mode, at home) → triggers
+  → interaction (focus, open, fish, talk, stations, plots) → combat → food
 render():
   camera → water/rain/gloom/tide uniforms → composer:
     world pass (HDR, MSAA) → bloom → viewmodel pass (after bloom, so the
@@ -135,6 +154,11 @@ Draw calls stay under 300 everywhere: `batchStatic()` merges every static mesh
 that shares a material (the originals stay, hidden, so collision and focus rays
 still see them), `collapseMaterials()` folds a rigid model's per-material split
 into one vertex-coloured mesh, and only things near the player cast shadows.
+Home merges its finished buildings the same way each time one stands
+(`batchMeshes()`), and instanced props (decor, drift) draw their rough plain
+materials as one part (`instanceParts()`): with 50 decor pieces, every kind of
+drift and both families home, the Rest is at about 210–275 (the most with two
+plots still in ruins: a ruin and its board cost more than a finished building).
 
 ## Key decisions
 

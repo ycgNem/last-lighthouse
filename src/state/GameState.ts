@@ -1,9 +1,9 @@
 import type { BindingOverrides } from "../data/controls";
-import type { FlagId, GearId, ItemId, ItemStack, LocationId, NpcId, ProjectId, SkillId, StageIndex } from "../data/ids";
+import type { DecorId, FlagId, FlotsamId, GearId, ItemId, ItemStack, LocationId, NpcId, ProjectId, SkillId, StageIndex } from "../data/ids";
 import { STARTING_GEAR } from "../data/items";
 import { TIDE } from "../data/tide";
 
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 
 export interface Settings {
   sensitivity: number;
@@ -25,6 +25,14 @@ export interface Settings {
   bindings: BindingOverrides;
 }
 
+/** A piece of decor placed round the Rest. */
+export interface PlacedDecor {
+  kind: DecorId;
+  x: number;
+  z: number;
+  yaw: number;
+}
+
 /** The entire save. Everything runtime-only is rebuilt from this. */
 export interface GameState {
   version: typeof SAVE_VERSION;
@@ -32,7 +40,23 @@ export interface GameState {
   tide: { elapsed: number };
   location: LocationId;
   stage: StageIndex;
+  /** Rebuilt plots. */
   projects: ProjectId[];
+  /** Materials handed in to plots still going up. */
+  build: Partial<Record<ProjectId, Partial<Record<ItemId, number>>>>;
+  decor: PlacedDecor[];
+  /** Pieces ever hooked out of the sea. */
+  salvaged: number;
+  cove: {
+    /** Washed up on the beach, waiting to be picked up. */
+    beach: FlotsamId[];
+    /** Caught in the cove net (Net Loft) while you were away. */
+    net: FlotsamId[];
+    /** The low tide the wreck field was last stocked for (count since the new game), and the pieces left on each wreck. */
+    wrecks: { tide: number; left: Record<string, number> };
+  };
+  /** Tide clock when you last set out from the Rest, for what drifts in while you're away. Null at home. */
+  leftHomeAt: number | null;
   flags: FlagId[];
   skillXp: Record<SkillId, number>;
   gear: GearId[];
@@ -54,6 +78,11 @@ export function createNewGame(): GameState {
     location: "home",
     stage: 0,
     projects: [],
+    build: {},
+    decor: [],
+    salvaged: 0,
+    cove: { beach: [], net: [], wrecks: { tide: -1, left: {} } },
+    leftHomeAt: null,
     flags: [],
     skillXp: { fishing: 0, salvaging: 0, cooking: 0, smithing: 0, combat: 0 },
     gear: [...STARTING_GEAR],

@@ -336,6 +336,12 @@ class MB:
         ret = bmesh.ops.create_cone(self.bm, cap_ends=True, cap_tris=False, segments=segs, radius1=r1, radius2=r2, depth=h, matrix=m)
         return self._finish(ret["verts"], mat, bev, jit, tint, min(0.03, max(r1, r2) * 0.15, h * 0.15))
 
+    def quad(self, corners, mat=None, jit=0.05, tint=1.0):
+        """One face through three or four game points, counter-clockwise seen from the side it faces."""
+        verts = [self.bm.verts.new(B(*p)) for p in corners]
+        self._paint([self.bm.faces.new(verts)], mat, jit, tint)
+        return self
+
     def sphere(self, r, at=(0, 0, 0), mat=None, scale=(1, 1, 1), subdiv=1, yaw=0.0, pitch=0.0, roll=0.0, jit=0.05, tint=1.0):
         sx, sy, sz = scale
         m = Matrix.LocRotScale(B(*at), Euler((pitch, -roll, yaw)), Vector((sx, sz, sy)))
@@ -529,7 +535,7 @@ class MB:
     # ---- output
 
     def build(self, name, loc=(0, 0, 0), yaw=0.0, roll=0.0, parent=None, props=None, col=False, origin_from_parent=False,
-              ao=0.8, ao_dist=None, ao_samples=20, ground=True, grime=0.18, grime_h=0.45, tideline=False, smooth=None):
+              ao=0.8, ao_dist=None, ao_samples=20, ground=True, grime=0.18, grime_h=0.45, tideline=False, smooth=None, waterline=None):
         """Bakes colour and occlusion into the 'Col' layer and links the object.
 
         ao        strength of the ambient occlusion (0 = none)
@@ -537,6 +543,8 @@ class MB:
         grime     darkening toward the base, over `grime_h` metres
         tideline  wet, darker band below the high-tide line (world height), a
                   pale salt line on it, and weed-dark below low water
+        waterline something afloat: wet and darker below this local height
+                  (flotsam rides with its origin on the surface: 0)
         smooth    smooth shading with hard edges past this angle (degrees)
         """
         bm = self.bm
@@ -585,6 +593,12 @@ class MB:
             shade[v.index] *= 1.0 - grime * (1.0 - smoothstep(0.0, grime_h, h))
 
         wet = None
+        if waterline is not None:
+            wet = []
+            for v in bm.verts:
+                d = waterline - v.co.z + (vnoise3(v.co.x * 3.1, v.co.y * 3.1, 0.5, 11) - 0.5) * 0.03
+                k = smoothstep(-0.01, 0.04, d)
+                wet.append((1.0 - 0.4 * k, 1.0 - 0.33 * k, 1.0 - 0.38 * k))
         if tideline:
             wet = []
             for v in bm.verts:
@@ -696,6 +710,23 @@ def load_props():
     with bpy.data.libraries.load(os.path.join(ROOT, "art/blender/props/props.blend"), link=False) as (src, dst):
         dst.objects = list(src.objects)
     return {o.name[5:]: o for o in dst.objects if o is not None and o.name.startswith("PROP_")}
+
+
+def load_home():
+    """HOME_ templates from home.blend, keyed by name without the prefix (the home map places copies)."""
+    with bpy.data.libraries.load(os.path.join(ROOT, "art/blender/home/home.blend"), link=False) as (src, dst):
+        dst.objects = list(src.objects)
+    return {o.name[5:]: o for o in dst.objects if o is not None and o.name.startswith("HOME_") and o.parent is None}
+
+
+def merge_materials():
+    """Folds the copies appending brings (wood.001 ...) into the originals, so a
+    level exports each material once and the game's batching can merge it."""
+    for m in list(bpy.data.materials):
+        base, dot, num = m.name.rpartition(".")
+        if dot and num.isdigit() and base in bpy.data.materials:
+            m.user_remap(bpy.data.materials[base])
+            bpy.data.materials.remove(m)
 
 
 def _copy_children(src, dst):

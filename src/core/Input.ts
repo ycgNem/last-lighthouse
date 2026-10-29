@@ -21,6 +21,8 @@ export class Input {
   private pressedThisStep = new Set<string>();
   private mouseDX = 0;
   private mouseDY = 0;
+  /** Wheel notches since last asked: + is toward you. */
+  private wheel = 0;
   private cursorX = 0;
   private cursorInside = false;
   private skipNextMove = true;
@@ -56,6 +58,13 @@ export class Input {
     });
     window.addEventListener("mouseup", (e) => this.down.delete(`Mouse${e.button}`));
     window.addEventListener("mousemove", (e) => this.onMouseMove(e));
+    window.addEventListener(
+      "wheel",
+      (e) => {
+        if (this.active && e.deltaY !== 0) this.wheel += Math.sign(e.deltaY);
+      },
+      { passive: true },
+    );
     const page = document.documentElement;
     page.addEventListener("mouseleave", () => (this.cursorInside = false));
     page.addEventListener("mouseenter", () => {
@@ -154,6 +163,18 @@ export class Input {
   /** True once per physical press, for the fixed step that consumes it. */
   pressed(a: Action): boolean {
     return this.bindings[a].some((c) => this.pressedThisStep.has(c));
+  }
+
+  /** A key by its code, pressed this step (the build hotbar's 1-9). */
+  pressedKey(code: string): boolean {
+    return this.pressedThisStep.has(code);
+  }
+
+  /** Wheel notches since last called: + is toward you. */
+  consumeWheel(): number {
+    const n = this.wheel;
+    this.wheel = 0;
+    return n;
   }
 
   /** Mouse movement since last call, in pixels. */

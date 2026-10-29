@@ -2,15 +2,15 @@ import type { LocationId } from "./ids";
 
 // The sea chart in the journal (src/ui/chart.ts draws it). Coordinates are on
 // a 480 x 270 chart, north up: the mainland to the north-west, Lantern's Rest
-// on its headland, Gullwash Shore up the coast by the cliff path, the beached
-// Meridian to the east and Saltmere's light far out to the north-east. Past
-// the beam's reach everything is fog.
+// on its headland, the drowned town up the coast, the beached Meridian to the
+// east and Saltmere's light far out to the north-east. Past the beam's reach
+// everything is fog.
 
 type Pt = readonly [number, number];
 
 export const CHART = {
   size: [480, 270] as Pt,
-  at: { home: [92, 188], shore: [166, 104], wreck: [292, 198], beacon: [408, 82] } as Record<LocationId, Pt>,
+  at: { home: [92, 188], wreck: [292, 198], beacon: [408, 82] } as Record<LocationId, Pt>,
   /** The beam's reach on the chart at each lighthouse stage. */
   reach: [140, 250, 380, 380] as readonly number[],
   /** The mainland's coast, north edge to south edge; the land lies west of it. */
@@ -21,8 +21,6 @@ export const CHART = {
   ] as readonly Pt[],
   /** Islands, each a closed outline. */
   islands: [
-    // Gullwash's islet, out along the sandbar.
-    [[188, 116], [195, 113], [200, 118], [197, 124], [190, 124]],
     // Saltmere.
     [[397, 75], [405, 69], [416, 71], [422, 79], [420, 90], [410, 96], [400, 93], [395, 85]],
     // The bank the Meridian ran onto.
@@ -33,15 +31,11 @@ export const CHART = {
     [[441, 138], [449, 134], [455, 141], [448, 147]],
     [[262, 34], [272, 30], [279, 37], [270, 43]],
   ] as readonly (readonly Pt[])[],
-  /** The cliff path from the Rest up to Gullwash, just inland of the coast. */
-  cliffPath: [[97, 180], [104, 164], [116, 148], [127, 136], [137, 124], [148, 113], [158, 104]] as readonly Pt[],
-  /** Boat routes from the Rest's dock: a control point for each curve. */
-  routes: { shore: [182, 168], wreck: [190, 232], beacon: [300, 178] } as Partial<Record<LocationId, Pt>>,
-  /** The sandbar out to Gullwash's islet (dry at low tide). */
-  sandbar: [[170, 106], [178, 110], [186, 116]] as readonly Pt[],
+  /** Boat routes from the Rest's jetty: a control point for each curve. */
+  routes: { wreck: [190, 232], beacon: [300, 178] } as Partial<Record<LocationId, Pt>>,
   /** Rocks awash. */
   rocks: [[248, 122], [252, 126], [312, 176], [318, 182], [384, 120], [226, 232], [232, 236], [140, 210]] as readonly Pt[],
-  /** The drowned town off Gullwash: its streets and roofs show through at low water. */
+  /** The drowned town up the coast: its streets and roofs show through at low water. */
   drowned: {
     origin: [214, 134] as Pt,
     /** Turn of the street grid, radians. */
@@ -57,7 +51,7 @@ export const CHART = {
     roofs: [[-16, -7], [-2, -7], [14, -7], [30, -7], [-12, 5], [2, 6], [16, 5], [32, 5], [-4, 17], [14, 17], [0, -16], [18, -16]] as readonly Pt[],
     spire: [31, -16] as Pt,
   },
-  /** The telegraph line walking out to sea from the shore. */
+  /** The telegraph line walking out to sea from the drowned town. */
   poles: [[182, 88], [194, 84], [206, 80], [218, 77], [230, 74], [242, 71], [254, 69]] as readonly Pt[],
   /** Lights that went out. Never visited this chapter; they wait in the fog. */
   deadLights: [[462, 168], [336, 24], [468, 40], [238, 252]] as readonly Pt[],

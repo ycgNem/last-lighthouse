@@ -139,6 +139,31 @@
   content: " ✓";
   color: var(--amber);
 }
+/* A plot going up: how far, and what it's for. */
+.rise {
+  height: 6px;
+  margin: 4px 0 12px;
+  background: rgba(255, 255, 255, 0.07);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.rise i {
+  display: block;
+  height: 100%;
+  background: var(--amber);
+}
+.perk {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: var(--ink-dim);
+}
+.perk strong {
+  color: var(--lamp);
+  font-weight: 600;
+}
+.req li span small {
+  color: var(--amber);
+}
 .cards {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));

@@ -9,6 +9,7 @@ import { RECIPES, type RecipeDef } from "../data/recipes";
 import { MAX_LEVEL, SKILLS } from "../data/skills";
 import { CHAPTER_ONE } from "../data/story";
 import type { GameState } from "../state/GameState";
+import { buildProgress, delivered, plotOpen, remaining } from "../systems/building";
 import { craftBlock, type CraftBlock } from "../systems/crafting";
 import { available, satchelCapacity, stored } from "../systems/inventory";
 import { canTravelOffshore, isMet, missingFor, nextStage } from "../systems/progression";
@@ -30,7 +31,8 @@ const RENDER_SCALES: readonly [number, string][] = [
 export interface MenuHost {
   readonly state: GameState;
   craft(recipeId: string, times: number): void;
-  repair(project: ProjectId): void;
+  /** Hands in what you have toward a plot. */
+  build(project: ProjectId): void;
   upgradeLighthouse(): void;
   depositAll(): void;
   store(slot: number): void;
@@ -60,6 +62,13 @@ const BLOCK_TEXT: Record<CraftBlock, string> = {
   already_owned: "Owned",
   materials: "Missing materials",
   satchel_full: "Satchel full",
+};
+
+const STATION_TEXT: Record<StationId, { title: string; skill: SkillId; lede: string }> = {
+  hearth: { title: "Hearth", skill: "cooking", lede: "Cook what you caught. Food heals; the best of it does more." },
+  forge: { title: "Forge", skill: "smithing", lede: "Smelt scrap into ingots, then make something worth carrying." },
+  smokehouse: { title: "Smokehouse", skill: "cooking", lede: "Hang your catch in the smoke: it heals more, and packs flat." },
+  net_loft: { title: "Net Loft", skill: "salvaging", lede: "Line, nets and the best hook in the Rest." },
 };
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
@@ -155,6 +164,7 @@ export class Menus {
     for (const k of r.keyItems ?? []) rows.push(`<li class="${s.keyItems.includes(k) ? "ok" : ""}">${ITEMS[k].name}<span>${s.keyItems.includes(k) ? "✓" : "—"}</span></li>`);
     for (const p of r.projects ?? []) rows.push(`<li class="${s.projects.includes(p) ? "ok" : ""}">${PROJECTS[p].name}<span>${s.projects.includes(p) ? "✓" : "—"}</span></li>`);
     for (const f of r.flags ?? []) rows.push(`<li class="${s.flags.includes(f) ? "ok" : ""}">${f === "guardian_defeated" ? "Defeat the Wreck Guardian" : f}<span>${s.flags.includes(f) ? "✓" : "—"}</span></li>`);
+    if (r.stage !== undefined) rows.push(`<li class="${s.stage >= r.stage ? "ok" : ""}">The lamp: ${STAGES[r.stage]!.name}<span>${s.stage >= r.stage ? "✓" : "—"}</span></li>`);
     return `<ul class="req">${rows.join("")}</ul>`;
   }
 
@@ -183,13 +193,12 @@ export class Menus {
 
   private station(station: StationId): string {
     const s = this.host.state;
-    const skill: SkillId = station === "hearth" ? "cooking" : "smithing";
-    const title = station === "hearth" ? "Hearth" : "Forge";
+    const { title, skill, lede } = STATION_TEXT[station];
     const cards = RECIPES.filter((r) => r.station === station)
       .map((r) => this.recipeCard(r))
       .join("");
     return `<h2>${title} <small>${SKILLS[skill].name} ${skillLevel(s, skill)}</small></h2>
-      <p class="lede">${station === "hearth" ? "Cook what you caught. Food heals; the best of it does more." : "Smelt scrap into ingots, then make something worth carrying."} Uses your satchel and the storage chest.</p>
+      <p class="lede">${lede} Uses your satchel and the storage chest.</p>
       <div class="cards">${cards}</div>`;
   }
 
@@ -218,11 +227,31 @@ export class Menus {
     </article>`;
   }
 
+  /** A plot: what it takes, what's gone in so far, and what you have on you or in the chest toward the rest. */
   private project(id: ProjectId): string {
+    const s = this.host.state;
     const def = PROJECTS[id];
-    const ok = isMet(missingFor(this.host.state, def.requires));
-    return `<h2>${def.name}</h2><p class="lede">${def.description}</p>${this.req(def.requires)}
-      <button data-act="repair" data-project="${id}" class="primary wide" ${ok ? "" : "disabled"}>${ok ? "Repair" : "Gather what's missing"}</button>`;
+    const done = s.projects.includes(id);
+    const open = plotOpen(s, id);
+    const pct = Math.floor(buildProgress(s, id) * 100);
+    const gates = { ...def.requires, items: [] };
+    const rows = (def.requires.items ?? []).map((st) => {
+      const given = done ? st.qty : delivered(s, id, st.item);
+      const have = available(s, st.item);
+      const more = given < st.qty && have > 0 ? ` <small>+${Math.min(have, st.qty - given)} on hand</small>` : "";
+      return `<li class="${given >= st.qty ? "ok" : ""}">${ITEMS[st.item].name}<span>${given}/${st.qty}${more}</span></li>`;
+    });
+    const canGive = open && remaining(s, id).some((st) => available(s, st.item) > 0);
+    let action: string;
+    if (done) action = `<p class="lede">It stands again.</p>`;
+    else if (!open) action = `<p class="lede">Not yet:</p>${this.req(gates)}`;
+    else action = `<button data-act="build" data-project="${id}" class="primary wide" ${canGive ? "" : "disabled"}>${canGive ? "Add materials" : "Find more materials"}</button>`;
+    return `<h2>${pct > 0 ? def.name : def.ruin} <small>${pct}% rebuilt</small></h2>
+      <p class="lede">${def.description} Hand in what you have: it goes up as you go. Uses your satchel, then the storage chest.</p>
+      <div class="rise"><i style="width:${pct}%"></i></div>
+      <p class="perk"><strong>Once it stands:</strong> ${esc(def.perk)}</p>
+      <ul class="req">${rows.join("")}</ul>
+      ${action}`;
   }
 
   private lighthouse(): string {
@@ -250,7 +279,7 @@ export class Menus {
       stage: s.stage,
       here: s.location,
       revealed: (l) => LOCATIONS[l].revealedAtStage <= s.stage,
-      open: (l) => l === "home" || l === "shore" || offshore,
+      open: (l) => l === "home" || offshore,
       beaconLit: s.flags.includes("chapter1_complete"),
     });
     const rows = LOCATION_IDS.filter((l) => l !== s.location)
@@ -258,8 +287,7 @@ export class Menus {
         const d = LOCATIONS[l];
         if (l === "home") return `<li><div><strong>${d.name}</strong><p>Row home. Whatever you carry is safe once it's in the chest.</p></div><button data-act="travel" data-to="home" class="primary">Row home</button></li>`;
         if (d.revealedAtStage > s.stage) return `<li class="fog"><div><strong>Fog</strong><p>The beam can't reach this far yet.</p></div></li>`;
-        const boat = l === "shore" || offshore;
-        return `<li><div><strong>${d.name}</strong><p>${d.blurb}</p></div>${boat ? `<button data-act="travel" data-to="${l}" class="primary">Set out</button>` : `<em>Mend the dock first</em>`}</li>`;
+        return `<li><div><strong>${d.name}</strong><p>${d.blurb}</p></div>${offshore ? `<button data-act="travel" data-to="${l}" class="primary">Set out</button>` : `<em>Rebuild the jetty first</em>`}</li>`;
       })
       .join("");
     return `<h2>Sea chart</h2><p class="lede">${this.host.tideLine()}</p>${svg}<ul class="dest">${rows}</ul>`;
@@ -367,8 +395,8 @@ export class Menus {
       case "craft":
         this.host.craft(d.recipe!, Number(d.times));
         break;
-      case "repair":
-        this.host.repair(d.project as ProjectId);
+      case "build":
+        this.host.build(d.project as ProjectId);
         break;
       case "upgrade":
         this.host.upgradeLighthouse();

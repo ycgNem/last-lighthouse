@@ -11,7 +11,7 @@ import { findBlender } from "./blender-path.ts";
 
 const root = resolve(import.meta.dirname, "..");
 // Home and the locations append props from props.blend, so props comes first.
-const ORDER = ["props", "enemies", "viewmodels", "home", "scenery", "shore", "wreck", "beacon"];
+const ORDER = ["props", "enemies", "viewmodels", "home", "home_map", "scenery", "wreck", "beacon"];
 
 const blender = findBlender();
 if (!blender) {

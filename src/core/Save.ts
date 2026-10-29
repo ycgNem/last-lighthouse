@@ -1,4 +1,5 @@
 import { createNewGame, SAVE_VERSION, type GameState } from "../state/GameState";
+import { advanceQuest } from "../systems/quests";
 
 const KEY = "last-lighthouse.save";
 
@@ -12,7 +13,27 @@ export interface KeyValueStore {
 type Migration = (raw: Record<string, unknown>) => Record<string, unknown>;
 
 /** MIGRATIONS[n] upgrades a version-n save to version n+1. */
-const MIGRATIONS: Record<number, Migration> = {};
+const MIGRATIONS: Record<number, Migration> = {
+  // The Rest becomes the base: Gullwash Shore is gone (its materials drift into
+  // the cove now), the dock is the jetty, and everyone carries a salvage hook.
+  1: (raw) => {
+    const out: Record<string, unknown> = { ...raw, version: 2 };
+    if (raw.location === "shore") out.location = "home";
+    const stage = typeof raw.stage === "number" ? raw.stage : 0;
+    const projects = (Array.isArray(raw.projects) ? (raw.projects as string[]) : []).map((p) => (p === "dock" ? "jetty" : p));
+    // Odile cooked at the hearth from the start before; a save past the lamp keeps her.
+    if (stage >= 1 && !projects.includes("cottage_1")) projects.push("cottage_1");
+    out.projects = projects;
+    const gear = Array.isArray(raw.gear) ? (raw.gear as string[]) : [];
+    if (!gear.includes("hook_rope")) out.gear = [...gear, "hook_rope"];
+    // The steps changed: start from the first and walk past what's done (at
+    // load, below), counting the old foraging as the hook's first lesson.
+    const quest = (typeof raw.quest === "object" && raw.quest !== null ? raw.quest : {}) as Record<string, unknown>;
+    out.salvaged = typeof quest.step === "number" && quest.step > 0 ? 6 : 0;
+    out.quest = { ...quest, step: 0 };
+    return out;
+  },
+};
 
 export function serialize(state: GameState): string {
   return JSON.stringify(state);
@@ -34,6 +55,10 @@ export function deserialize(json: string): GameState {
   const state = { ...fresh, ...raw, version: SAVE_VERSION } as GameState;
   const settings = typeof raw.settings === "object" && raw.settings !== null ? (raw.settings as Partial<GameState["settings"]>) : {};
   state.settings = { ...fresh.settings, ...settings, bindings: { ...(settings.bindings ?? {}) } };
+  const cove = typeof raw.cove === "object" && raw.cove !== null ? (raw.cove as Partial<GameState["cove"]>) : {};
+  state.cove = { ...fresh.cove, ...cove };
+  // Quietly past any step already done (a migrated save starts from the first).
+  advanceQuest(state);
   return state;
 }
 

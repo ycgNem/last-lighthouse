@@ -1,6 +1,6 @@
 import { Horizon } from "../world/Horizon";
 import { PROLOGUE, PROLOGUE_CARD_SECONDS } from "../data/story";
-import { sourcesOf, stillNeeded } from "../systems/guide";
+import { driftGives, sourcesOf, stillNeeded } from "../systems/guide";
 import * as THREE from "three";
 import { Sfx } from "../audio/Sfx";
 import { Projectiles } from "../combat/Projectiles";
@@ -13,10 +13,13 @@ import { BALANCE } from "../data/balance";
 import { ACTIONS, effectiveBindings, keyName, type Action } from "../data/controls";
 import { PERF, POST, RAIN } from "../data/presentation";
 import { ENEMIES } from "../data/enemies";
-import { ENEMY_IDS, SKILL_IDS, type EnemyId, type FlagId, type GearId, type ItemId, type LocationId, type NpcId, type ProjectId, type SkillId, type StageIndex } from "../data/ids";
+import { DECOR, DECOR_RULES } from "../data/decor";
+import { DECOR_IDS, ENEMY_IDS, SKILL_IDS, type EnemyId, type FlagId, type FlotsamId, type GearId, type ItemId, type LocationId, type NpcId, type ProjectId, type SkillId, type StageIndex } from "../data/ids";
 import { GEAR, ITEMS } from "../data/items";
 import { PROJECTS, STAGES } from "../data/lighthouse";
 import { LOCATIONS } from "../data/locations";
+import { NODES } from "../data/nodes";
+import { FLOTSAM } from "../data/salvage";
 import { NPCS } from "../data/npcs";
 import { getRecipe } from "../data/recipes";
 import { SKILLS } from "../data/skills";
@@ -27,13 +30,19 @@ import { Post } from "../fx/Post";
 import { Rain } from "../fx/Rain";
 import { Loot } from "../fx/Loot";
 import { Fishing } from "../gather/Fishing";
+import { Flotsam, type Piece } from "../gather/Flotsam";
 import { GatherNode } from "../gather/GatherNode";
+import { Hook, type Hookable } from "../gather/Hook";
+import { Wreck } from "../gather/Wreckage";
 import { PlayerController } from "../player/PlayerController";
 import { Viewmodel } from "../player/Viewmodel";
 import { createNewGame, type GameState } from "../state/GameState";
 import { craft } from "../systems/crafting";
-import { addItem, applyDeathLoss, available, carried, depositAll, removeAvailable, satchelCapacity, stored } from "../systems/inventory";
-import { advanceStage, completeProject, isMet, maxHp, missingFor } from "../systems/progression";
+import { decorAt, pickUpDecor, placeBlock, placeDecor, type PlaceBlock } from "../systems/decor";
+import { addItem, applyDeathLoss, available, carried, depositAll, hasAll, removeAvailable, satchelCapacity, stored } from "../systems/inventory";
+import { buildProgress, deliver, remaining } from "../systems/building";
+import { advanceStage, isMet, maxHp, missingFor } from "../systems/progression";
+import { awayCatch, hookStats, rollYields } from "../systems/salvage";
 import { advanceQuest, currentStep, stepMaterials } from "../systems/quests";
 import { addXp, skillLevel } from "../systems/skills";
 import { AutoResolution } from "../systems/resolution";
@@ -94,6 +103,16 @@ const FREE_LOOK_NOTE =
   "This browser won't capture the mouse, so move it to look and hold it near the left or right edge to keep turning. " +
   `Open ${location.origin} in Chrome or Edge for full mouse capture.`;
 
+/** Why a piece of decor can't go where you're looking. A shortfall in materials lists them instead. */
+const BUILD_BLOCK: Record<Exclude<PlaceBlock, "cost">, string> = {
+  bounds: "Only inside the village",
+  slope: "Too steep here",
+  water: "Too near the water",
+  blocked: "Keep this clear",
+  overlap: "Something's in the way",
+  limit: "The Rest can't hold any more decor",
+};
+
 const CHAPTER_SUB = "Saltmere burns again. Lantern's Rest has a future, and the coast is yours to explore.";
 
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
@@ -129,6 +148,14 @@ export class Game implements GameContext {
   private readonly lantern = new THREE.PointLight(0xffc98a, 5, 14, 1.4);
   private viewmodel: Viewmodel | null = null;
   private fishing: Fishing | null = null;
+  private hook: Hook | null = null;
+  /** The cove's drift: home only. */
+  private flotsam: Flotsam | null = null;
+  /** Wreckage the hook tears at, here. */
+  private wrecks: Wreck[] = [];
+  /** Build mode at home (B): the piece in hand (an index into DECOR_IDS) and its turn. Null when not building. */
+  private building: { index: number; yaw: number } | null = null;
+  private lastDecor = 0;
   private encounters = new Encounters([]);
   private nodes: GatherNode[] = [];
   private distant: DistantLight | null = null;
@@ -155,7 +182,8 @@ export class Game implements GameContext {
   private pendingSummary: MenuKind | null = null;
   private flagsKey = "";
 
-  private prompt: { text: string; blocked: boolean } | null = null;
+  /** What the HUD prompt says, and the key it names (interact unless said). */
+  private prompt: { text: string; blocked: boolean; key?: Action } | null = null;
   private gatherNode: GatherNode | null = null;
   private gatherT = 0;
   private readonly fishFrom = new THREE.Vector3();
@@ -196,6 +224,8 @@ export class Game implements GameContext {
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = POST.exposure;
+    // Plots rise out of the ground under a clipping plane (src/world/home/Plot.ts).
+    this.renderer.localClippingEnabled = true;
     container.appendChild(this.renderer.domElement);
 
     this.camera = new THREE.PerspectiveCamera(this.state.settings.fov, window.innerWidth / window.innerHeight, 0.05, 1200);
@@ -219,7 +249,7 @@ export class Game implements GameContext {
       {
         state: this.state,
         craft: (id, times) => this.craftRecipe(id, times),
-        repair: (p) => this.repair(p),
+        build: (p) => this.build(p),
         upgradeLighthouse: () => this.upgradeLighthouse(),
         depositAll: () => this.deposit(),
         store: (slot) => this.storeSlot(slot),
@@ -283,13 +313,17 @@ export class Game implements GameContext {
   /** Loads the shared models, then the saved location, then waits for the first click. */
   private async boot(): Promise<void> {
     await this.assets.preload(SHARED_MODELS);
-    this.home.dress(this.assets);
+    if (!(await this.home.load(this.assets))) {
+      this.hud.setOverlay("title", "Lantern's Rest couldn't be loaded. Check your connection and reload the page.");
+      return;
+    }
     this.viewmodel = new Viewmodel(this.assets);
     this.viewmodel.scene.environment = this.scene.environment;
     this.viewmodel.scene.environmentIntensity = POST.environment;
     this.post.setOverlay(this.viewmodel.scene, this.viewmodel.camera);
     this.viewmodel.equip(this.state.gear);
     this.fishing = new Fishing(this);
+    this.hook = new Hook(this);
     await this.enter(this.state.location, "resume");
     this.setMode("title");
   }
@@ -428,9 +462,17 @@ export class Game implements GameContext {
     this.projectiles.update(dt, this);
     this.loot.update(dt, this);
     for (const n of this.nodes) n.update(dt, this);
+    const salvaged = s.salvaged;
+    for (const w of this.wrecks) w.update(dt, this);
+    this.flotsam?.update(dt, this);
+    if (this.input.pressed("build")) this.toggleBuild();
+    if (this.building) this.updateBuild();
+    else this.updateHook(dt);
+    // Hooked or picked up: a salvage step may be done.
+    if (s.salvaged !== salvaged) this.afterAction(false);
     this.shadowLod();
     this.updateTriggers();
-    this.updateInteraction(dt);
+    if (!this.building) this.updateInteraction(dt);
     if (this.mode !== "playing") return;
     this.updateCombat(dt);
     this.updateFlare(dt);
@@ -512,7 +554,10 @@ export class Game implements GameContext {
       this.gatherNode = null;
       this.gatherT = 0;
     }
-    if (!focus) return;
+    if (!focus) {
+      this.hookPrompt();
+      return;
+    }
 
     if (focus.kind === "interact") {
       const info = this.interactInfo(focus.it);
@@ -595,6 +640,11 @@ export class Game implements GameContext {
     const ok = (label: string) => ({ label, blocked: false });
     const no = (label: string) => ({ label, blocked: true });
     if (it.id.startsWith("npc:")) return ok(`Talk to ${NPCS[it.id.slice(4) as NpcId].name}`);
+    if (it.id.startsWith("plot:")) {
+      const id = it.id.slice(5) as ProjectId;
+      const p = buildProgress(s, id);
+      return ok(p > 0 ? `${PROJECTS[id].name}: ${Math.floor(p * 100)}% rebuilt` : `${PROJECTS[id].ruin}: rebuild it`);
+    }
     switch (it.id) {
       case "lamp":
         return ok("The lighthouse lamp");
@@ -603,14 +653,13 @@ export class Game implements GameContext {
       case "storage":
         return ok("Open the storage chest");
       case "forge":
-        return ok(s.projects.includes("forge") ? "Work the forge" : "Rekindle the forge");
+        return ok("Work the forge");
+      case "net_loft":
+        return ok("Work in the net loft");
+      case "smokehouse":
+        return ok("Smoke your catch");
       case "boat":
-        if (s.projects.includes("dock")) return ok("Take the boat");
-        return this.level === this.home ? ok("Mend the dock") : no("The dock at home is broken. Take the cliff path back.");
-      case "path_shore":
-        return ok("Take the cliff path down to Gullwash Shore");
-      case "path_home":
-        return ok("Climb the cliff path home");
+        return ok("Take the boat");
       case "rope_ladder": {
         // Only from the deck: at the bottom you're already where it goes.
         const bottom = this.level instanceof GlbLevel ? this.level.spawnFor("ladder").position.y : 0;
@@ -627,9 +676,12 @@ export class Game implements GameContext {
   }
 
   private useInteract(it: LevelInteract): void {
-    const s = this.state;
     if (it.id.startsWith("npc:")) {
       this.talk(it.id.slice(4) as NpcId);
+      return;
+    }
+    if (it.id.startsWith("plot:")) {
+      this.openMenu({ kind: "project", project: it.id.slice(5) as ProjectId });
       return;
     }
     switch (it.id) {
@@ -643,16 +695,12 @@ export class Game implements GameContext {
         this.openMenu({ kind: "storage" });
         break;
       case "forge":
-        this.openMenu(s.projects.includes("forge") ? { kind: "station", station: "forge" } : { kind: "project", project: "forge" });
+      case "net_loft":
+      case "smokehouse":
+        this.openMenu({ kind: "station", station: it.id });
         break;
       case "boat":
-        this.openMenu(s.projects.includes("dock") ? { kind: "chart" } : { kind: "project", project: "dock" });
-        break;
-      case "path_shore":
-        this.travel("shore", "path");
-        break;
-      case "path_home":
-        this.travel("home", "path");
+        this.openMenu({ kind: "chart" });
         break;
       case "rope_ladder":
         this.climbLadder();
@@ -685,6 +733,138 @@ export class Game implements GameContext {
     this.beginTransition({ to: null, via: "path", move: to, title: "", sub: "", color: "#05090c", outTime: 0.35, hold: 0.2 });
   }
 
+  // ------------------------------------------------------- salvage hook
+
+  /** The hook: right mouse anywhere, and left too where there's nothing to shoot. */
+  private updateHook(dt: number): void {
+    const hook = this.hook;
+    if (!hook || !this.viewmodel) return;
+    const free = !this.hud.dialogueOpen && !this.fishing?.active && !this.relight;
+    const safe = LOCATIONS[this.state.location].safe;
+    const throwing = free && (this.input.pressed("hook") || (safe && this.input.pressed("fire")));
+    const targets: Hookable[] = [...(this.flotsam?.pieces ?? []), ...this.wrecks];
+    const thrown = hook.update(dt, { targets, muzzle: this.viewmodel.muzzle(this.camera), throwing, stats: hookStats(this.state), flotsam: this.flotsam });
+    if (thrown) this.viewmodel.kick();
+    this.viewmodel.setHookOut(hook.out);
+  }
+
+  /** With nothing to interact with, the prompt says what the hook would do. */
+  private hookPrompt(): void {
+    const aim = this.hook?.aim;
+    if (!aim) return;
+    const key: Action = LOCATIONS[this.state.location].safe ? "fire" : "hook";
+    this.prompt = aim.state === "ok" ? { text: `Hook the ${aim.target.name}`, blocked: false, key } : { text: aim.reason ?? "", blocked: true };
+  }
+
+  private reticle(): HudView["reticle"] {
+    const hook = this.hook;
+    if (!hook || this.building) return null;
+    if (hook.reeling) return "reel";
+    const aim = hook.aim;
+    return aim ? (aim.state === "ok" ? "hook" : aim.state) : null;
+  }
+
+  /**
+   * Home again: what the sea brought while you were away. Some washed up on
+   * the beach (the save's cove.beach, which Flotsam lays out), and once the
+   * Net Loft stands the cove net held some, hauled straight into the chest.
+   * Returns a line for the homecoming, or "".
+   */
+  private homecoming(): string {
+    const s = this.state;
+    if (s.leftHomeAt === null) return "";
+    const caught = awayCatch(s, s.leftHomeAt, s.tide.elapsed, Math.random);
+    s.leftHomeAt = null;
+    s.cove.beach.push(...caught.beach);
+    s.cove.net.push(...caught.net);
+    const netted = s.cove.net.length;
+    for (const id of s.cove.net) for (const st of rollYields(FLOTSAM[id].yields, Math.random)) s.storage[st.item] = stored(s, st.item) + st.qty;
+    s.cove.net = [];
+    const lines: string[] = [];
+    if (netted) lines.push(`The cove net held ${netted} piece${netted === 1 ? "" : "s"}: they're in the chest.`);
+    if (caught.beach.length) lines.push(`The tide left ${caught.beach.length} on the beach.`);
+    return lines.join(" ");
+  }
+
+  // ------------------------------------------------------------ building
+
+  /** B at home: in and out of build mode. */
+  private toggleBuild(): void {
+    if (this.building) {
+      this.lastDecor = this.building.index;
+      this.building = null;
+      this.home.decor?.showGhost(null);
+      return;
+    }
+    if (this.level !== this.home || this.hud.dialogueOpen || this.fishing?.active || this.relight || !this.home.decor) {
+      this.sfx.denied();
+      return;
+    }
+    this.hook?.reset();
+    this.viewmodel?.setHookOut(false);
+    this.building = { index: this.lastDecor, yaw: 0 };
+    this.sfx.ui();
+  }
+
+  /** The ghost follows the crosshair; place, turn, choose, or pick a piece back up for a full refund. */
+  private updateBuild(): void {
+    const b = this.building!;
+    const home = this.home;
+    const decor = home.decor!;
+    const input = this.input;
+    DECOR_IDS.forEach((_, i) => {
+      if (input.pressedKey(`Digit${i + 1}`)) b.index = i;
+    });
+    const wheel = input.consumeWheel();
+    if (wheel) b.index = (b.index + Math.sign(wheel) + DECOR_IDS.length) % DECOR_IDS.length;
+    if (input.pressed("rotate")) b.yaw = (b.yaw + DECOR_RULES.turnStep) % (Math.PI * 2);
+    const kind = DECOR_IDS[b.index]!;
+    this.prompt = null;
+
+    const eye = this.player.eye;
+    const dir = this.player.aim();
+    const hit = this.level.collider.raycast(eye, dir, DECOR_RULES.reach);
+    const ground = home.groundRay(eye, dir, DECOR_RULES.reach);
+    // Something standing in the way of the ground: a piece you placed, or a wall.
+    if (hit && (!ground || hit.distance < ground.distance - 0.3)) {
+      decor.showGhost(kind);
+      const pick = decorAt(this.state, hit.point.x, hit.point.z, 0.3);
+      if (pick < 0) {
+        this.prompt = { text: "Look at open ground", blocked: true };
+        return;
+      }
+      const piece = this.state.decor[pick]!;
+      this.prompt = { text: `Pick up the ${DECOR[piece.kind].name} (all it cost comes back)`, blocked: false, key: "hook" };
+      if (input.pressed("hook")) {
+        pickUpDecor(this.state, pick);
+        this.sfx.pickup();
+        this.effects.burst(hit.point, FX_COLORS.smoke, 12);
+        this.afterAction();
+      }
+      return;
+    }
+    if (!ground) {
+      decor.showGhost(kind);
+      this.prompt = { text: "Look at open ground, nearer", blocked: true };
+      return;
+    }
+    const world = home.placeWorld([{ x: this.player.position.x, z: this.player.position.z, r: 0.6 }]);
+    const at = ground.point;
+    const block = placeBlock(this.state, world, kind, at.x, at.z, b.yaw);
+    decor.showGhost(kind, new THREE.Vector3(at.x, home.groundY(at.x, at.z) ?? at.y, at.z), b.yaw, block === null);
+    if (block === "cost") this.prompt = { text: `Needs ${DECOR[kind].cost.map((c) => `${c.qty} ${ITEMS[c.item].name}`).join(", ")}`, blocked: true };
+    else if (block) this.prompt = { text: BUILD_BLOCK[block], blocked: true };
+    else this.prompt = { text: `Place the ${DECOR[kind].name}`, blocked: false, key: "fire" };
+    if (!input.pressed("fire")) return;
+    if (placeDecor(this.state, world, kind, at.x, at.z, b.yaw)) {
+      this.sfx.denied();
+      return;
+    }
+    this.sfx.craft();
+    this.effects.burst(at.clone().add(new THREE.Vector3(0, 0.4, 0)), FX_COLORS.smoke, 16);
+    this.afterAction();
+  }
+
   // ------------------------------------------------------------ combat
 
   private updateCombat(dt: number): void {
@@ -712,6 +892,7 @@ export class Game implements GameContext {
     const near = PERF.shadowNear * PERF.shadowNear;
     for (const e of this.encounters.enemies) e.castShadows(e.position.distanceToSquared(p) < near);
     for (const n of this.nodes) n.castShadows(n.position.distanceToSquared(p) < near);
+    for (const w of this.wrecks) w.castShadows(w.at.distanceToSquared(p) < near);
   }
 
   /** Q: the Keeper's Lantern flares. Enemies in the cone reel; Gloom pockets in reach burn away. */
@@ -945,15 +1126,7 @@ export class Game implements GameContext {
   }
 
   private travel(to: LocationId, via: Via): void {
-    const home = to === "home";
-    const sub =
-      via === "boat"
-        ? home
-          ? "You row home under the beam."
-          : "You row out past the breakers."
-        : home
-          ? "You climb the cliff path home."
-          : "You pick your way down the cliff path.";
+    const sub = to === "home" ? "You row home under the beam." : "You row out past the breakers.";
     this.beginTransition({ to, via, title: LOCATIONS[to].name, sub, color: "#05090c", outTime: 0.7, hold: 0.9 });
   }
 
@@ -1035,8 +1208,10 @@ export class Game implements GameContext {
     let at = level.spawn;
     let yaw = level.spawnYaw;
     if (level === this.home) {
-      if (via === "boat") [at, yaw] = [this.home.dockSpawn, this.home.dockYaw];
-      else if (via === "path") [at, yaw] = [this.home.pathSpawn, this.home.pathYaw];
+      // Off the boat at the jetty; washed up on the beach; otherwise by the lighthouse door.
+      const jetty = this.state.projects.includes("jetty");
+      const sp = this.home.spawnFor(via === "boat" && jetty ? "jetty" : via === "boat" || via === "defeat" ? "landing" : "start");
+      [at, yaw] = [sp.position, sp.yaw];
     } else if (level instanceof GlbLevel && via === "path") {
       const sp = level.spawnFor("path");
       [at, yaw] = [sp.position, sp.yaw];
@@ -1048,7 +1223,10 @@ export class Game implements GameContext {
     this.gloom = level.gloom.map((m) => new GloomPocket(m.position, m.radius));
     for (const g of this.gloom) this.scene.add(g.root);
     this.gloomT = 0;
-    this.nodes = level.nodes.map((m) => new GatherNode(m.node, m, this));
+    // Wreckage is the hook's; everything else (crates, fishing, the lens) is E's.
+    this.nodes = level.nodes.filter((m) => NODES[m.node].kind !== "wreckage").map((m) => new GatherNode(m.node, m, this));
+    this.wrecks = level.nodes.filter((m) => NODES[m.node].kind === "wreckage").map((m) => new Wreck(m.node, m, this, level === this.home));
+    this.flotsam = level === this.home ? new Flotsam(this, level.points) : null;
     this.encounters = new Encounters(level.enemies);
     this.encounters.sync(this);
     this.inside.clear();
@@ -1062,6 +1240,8 @@ export class Game implements GameContext {
 
     if (level === this.home) {
       this.player.hp = this.maxHpNow();
+      const news = this.homecoming();
+      this.flotsam?.arrive(this);
       const t = this.trip;
       if (t && via !== "defeat" && (t.gained.size || t.kills || Object.keys(t.xp).length)) {
         const gained = [...t.gained].map(([item, qty]) => ({ item, qty }));
@@ -1072,15 +1252,19 @@ export class Game implements GameContext {
         this.pendingSummary = {
           kind: "summary",
           title: "Home again",
-          sub: ready ? `You have everything for ${ready}. ${bank}` : bank,
+          sub: [news, ready ? `You have everything for ${ready}. ${bank}` : bank].filter(Boolean).join(" "),
           gained,
           lost: [],
           xp: t.xp,
           kills: t.kills,
         };
-      }
+      } else if (news) this.hud.toast(news, "milestone", 6);
       this.trip = null;
-    } else if (!this.trip) this.trip = { gained: new Map(), xp: {}, kills: 0 };
+    } else {
+      if (!this.trip) this.trip = { gained: new Map(), xp: {}, kills: 0 };
+      // The cove keeps catching drift while you're out (homecoming()).
+      this.state.leftHomeAt ??= this.state.tide.elapsed;
+    }
 
     if (this.everStarted) this.sfx.setAmbience(level.id);
     this.bus.emit("travel:arrived", { location: level.id });
@@ -1112,6 +1296,13 @@ export class Game implements GameContext {
     this.fishing?.stop();
     for (const n of this.nodes) n.dispose();
     this.nodes = [];
+    for (const w of this.wrecks) w.dispose();
+    this.wrecks = [];
+    this.flotsam?.dispose();
+    this.flotsam = null;
+    this.hook?.reset();
+    this.building = null;
+    this.home.decor?.showGhost(null);
     this.encounters.clear();
     this.projectiles.clear();
     this.loot.clear();
@@ -1156,17 +1347,25 @@ export class Game implements GameContext {
     this.afterAction();
   }
 
-  private repair(p: ProjectId): void {
-    if (!this.tracked(() => completeProject(this.state, p))) {
+  /** "Add materials" at a plot: whatever you have toward it goes in, and it rises that much further. */
+  private build(p: ProjectId): void {
+    const d = this.tracked(() => deliver(this.state, p));
+    if (!d.given.length) {
       this.sfx.denied();
+      return;
+    }
+    this.afterAction();
+    const plot = this.home.plots.get(p);
+    this.sfx.craft();
+    if (plot) this.effects.burst(plot.workPoint(), FX_COLORS.smoke, 36);
+    if (!d.finished) {
+      this.hud.toast(`${PROJECTS[p].name}: ${Math.floor(buildProgress(this.state, p) * 100)}% rebuilt`, "info");
       return;
     }
     this.sfx.upgrade();
     this.closeMenu();
-    this.hud.banner(`${PROJECTS[p].name}\nDone.`, 4);
-    const spot = this.level.interacts.find((i) => i.id === p || (p === "dock" && i.id === "boat"));
-    if (spot) this.effects.burst(spot.object.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 1, 0)), FX_COLORS.amber, 60);
-    this.afterAction();
+    this.hud.banner(`${PROJECTS[p].name}\n${PROJECTS[p].perk}`, 6);
+    if (plot) this.effects.burst(plot.centre().add(new THREE.Vector3(0, 1, 0)), FX_COLORS.amber, 60);
   }
 
   private upgradeLighthouse(): void {
@@ -1351,13 +1550,13 @@ export class Game implements GameContext {
     if (save) this.save();
   }
 
-  /** Push progression into the world: home's beam, windows, forge and dock; level gates; gear. */
+  /** Push progression into the world: home's plots, people, boats and beam; level gates; gear. */
   private refreshWorld(): void {
     const s = this.state;
     const visuals = STAGES[s.stage]!.visuals;
     const fog = LOCATIONS[s.location].fog;
     if (this.level === this.home) {
-      this.home.applyProgress(visuals, s.projects, s.stage);
+      this.home.applyProgress(s);
       this.sky.setFog(fog[0], visuals.fogFar);
     } else this.sky.setFog(fog[0], fog[1]);
     const key = s.flags.join();
@@ -1475,7 +1674,7 @@ export class Game implements GameContext {
         mouseDX: -dYaw / k,
         mouseDY: -dPitch / k,
         speed: Math.hypot(p.velocity.x, p.velocity.z),
-        safe: LOCATIONS[this.state.location].safe || this.relight !== null,
+        lowered: this.relight !== null,
         fishing: this.fishing?.active ?? false,
         aspect: this.camera.aspect,
         time: this.time,
@@ -1525,6 +1724,14 @@ export class Game implements GameContext {
       dashRecharge: p.dashRechargeFraction,
       prompt: playing ? (this.prompt?.text ?? null) : null,
       promptBlocked: this.prompt?.blocked ?? false,
+      ...(this.prompt?.key ? { promptKey: this.prompt.key } : {}),
+      reticle: playing ? this.reticle() : null,
+      build: this.building
+        ? {
+            slots: DECOR_IDS.map((id) => ({ name: DECOR[id].name, cost: DECOR[id].cost.map((c) => `${c.qty} ${ITEMS[c.item].name}`).join(" · "), afford: hasAll(this.state, DECOR[id].cost) })),
+            selected: this.building.index,
+          }
+        : null,
       locationName: loc.name,
       safe: loc.safe,
       food: food ? { name: ITEMS[food].name, count: carried(s, food) } : null,
@@ -1559,7 +1766,6 @@ export class Game implements GameContext {
     };
     if (this.level !== this.home) {
       add(where("boat"), "Boat", "landing");
-      add(where("path_home"), "Path home", "home");
     }
     const obj = this.objective();
     if (obj) add(obj.at, obj.label, "objective");
@@ -1577,25 +1783,23 @@ export class Game implements GameContext {
     const g = step.goal;
     if (g.kind === "talk") return here === "home" ? pt(find(`npc:${g.npc}`), NPCS[g.npc].name) : null;
     if (step.id === "feed") {
-      if (here === "shore") {
-        const spot = this.nodes.find((n) => n.kind === "fish_silverfin" && n.available);
-        return spot ? pt(spot.position, "Fishing spot") : null;
-      }
       if (here !== "home") return null;
-      return available(s, "silverfin") >= 1 ? pt(find("hearth"), "Hearth") : pt(find("path_shore"), "Cliff path");
+      if (available(s, "silverfin") >= 1) return pt(find("hearth"), "Hearth");
+      const spot = this.nodes.find((n) => n.kind === "fish_silverfin" && n.available);
+      return spot ? pt(spot.position, "Fishing spot") : null;
     }
+    if (g.kind === "salvage") return here === "home" ? this.cove() : null;
     if (g.kind === "project" || g.kind === "stage") {
-      const req = g.kind === "project" ? PROJECTS[g.project].requires : STAGES[g.stage]?.requires;
-      if (!req) return null;
       if (g.kind === "stage" && STAGES[g.stage]!.performedAt === "beacon") {
         if (here === "beacon") return s.flags.includes("guardian_defeated") ? pt(find("beacon"), "Beacon") : pt(this.level.points.get("arena"), "Beacon rock");
         return here === "home" ? pt(find("boat"), "Boat") : null;
       }
-      const met = isMet(missingFor(s, req));
-      if (here !== "home") return met ? this.wayHome() : (this.nearestSource() ?? this.wayHome());
-      if (!met) return this.wayOut();
-      if (g.kind === "project") return pt(find(g.project === "dock" ? "boat" : g.project), PROJECTS[g.project].name);
-      return pt(find("lamp"), "Lighthouse");
+      if (here !== "home") return stillNeeded(s).length === 0 ? this.wayHome() : (this.nearestSource() ?? this.wayHome());
+      // A plot takes whatever you have toward it, so it's where to go while you have any.
+      if (g.kind === "project") {
+        if (remaining(s, g.project).some((st) => available(s, st.item) > 0)) return pt(find(`plot:${g.project}`), PROJECTS[g.project].name);
+      } else if (isMet(missingFor(s, STAGES[g.stage]!.requires))) return pt(find("lamp"), "Lighthouse");
+      return this.wayOut();
     }
     if (g.kind === "keyItem") {
       if (here === "wreck") {
@@ -1611,44 +1815,51 @@ export class Game implements GameContext {
   private nearestSource(): { at: THREE.Vector3; label: string } | null {
     const want = new Set(stillNeeded(this.state).map((s) => s.item));
     if (!want.size) return null;
-    let best: GatherNode | null = null;
+    let best: { at: THREE.Vector3; label: string } | null = null;
     let bestD = Infinity;
-    for (const n of this.nodes) {
-      if (!n.obtainable(this) || !n.def.yields.some((y) => want.has(y.item))) continue;
-      const d = n.position.distanceToSquared(this.player.position);
-      if (d < bestD) {
-        bestD = d;
-        best = n;
-      }
-    }
-    return best ? { at: best.position, label: best.def.name } : null;
-  }
-
-  /** The way back from a trip: the boat, or the cliff path. */
-  private wayHome(): { at: THREE.Vector3; label: string } | null {
-    const at = (id: string) => {
-      const it = this.level.interacts.find((i) => i.id === id);
-      return it && shown(it.object) ? it.object.getWorldPosition(new THREE.Vector3()) : undefined;
+    const consider = (at: THREE.Vector3, label: string, ok: boolean, gives: readonly { item: ItemId }[]) => {
+      if (!ok || !gives.some((y) => want.has(y.item))) return;
+      const d = at.distanceToSquared(this.player.position);
+      if (d < bestD) [best, bestD] = [{ at, label }, d];
     };
-    const boat = at("boat");
-    if (boat) return { at: boat, label: "Home" };
-    const path = at("path_home");
-    return path ? { at: path, label: "Home" } : null;
+    for (const n of this.nodes) consider(n.position, n.def.name, n.obtainable(this), n.def.yields);
+    for (const w of this.wrecks) consider(w.at, w.name, w.obtainable(this), w.def.yields);
+    return best;
   }
 
-  /** At home with materials still to find: the way out toward the nearest place that has them. */
+  /** The way back from a trip: the boat. */
+  private wayHome(): { at: THREE.Vector3; label: string } | null {
+    const it = this.level.interacts.find((i) => i.id === "boat");
+    return it && shown(it.object) ? { at: it.object.getWorldPosition(new THREE.Vector3()), label: "Home" } : null;
+  }
+
+  /** The nearest drift you could take, or the beach it comes in on. */
+  private cove(): { at: THREE.Vector3; label: string } {
+    let best: Piece | null = null;
+    let bestD = Infinity;
+    for (const p of this.flotsam?.pieces ?? []) {
+      const d = p.at.distanceToSquared(this.player.position);
+      if (p.live && d < bestD) [best, bestD] = [p, d];
+    }
+    return best ? { at: best.at, label: best.name } : { at: this.home.spawnFor("landing").position, label: "The cove" };
+  }
+
+  /** At home with materials still to find: the cove if the drift brings them, else the boat toward the nearest place that has them. */
   private wayOut(): { at: THREE.Vector3; label: string } | null {
     const missing = stillNeeded(this.state)[0];
-    const to = missing ? sourcesOf(this.state, missing.item).find((l) => l !== "home") : undefined;
+    if (!missing) return null;
+    const from = sourcesOf(this.state, missing.item);
+    if (from.includes("home")) return this.cove();
+    const to = from[0];
     if (!to) return null;
-    const id = to === "shore" ? "path_shore" : "boat";
-    const it = this.level.interacts.find((i) => i.id === id);
+    const it = this.level.interacts.find((i) => i.id === "boat");
     return it && shown(it.object) ? { at: it.object.getWorldPosition(new THREE.Vector3()), label: LOCATIONS[to].name } : null;
   }
 
-  /** Where to look for an item the step still needs: "here", or the nearest place that has it. */
+  /** Where to look for an item the step still needs: the cove, "here", or the nearest place that has it. */
   private whereToFind(item: ItemId): string | undefined {
     const from = sourcesOf(this.state, item);
+    if (this.state.location === "home" && driftGives(item)) return "the cove";
     if (from.includes(this.state.location)) return "here";
     const to = from[0];
     return to ? LOCATIONS[to].name : undefined;
@@ -1747,6 +1958,13 @@ export class Game implements GameContext {
       tide: (seconds: number) => (this.state.tide.elapsed += seconds),
       go: (to: LocationId, via: Via = "boat") => this.travel(to, via),
       heal: () => (this.player.hp = this.player.maxHp),
+      /** Tops up what a plot still needs and hands it in: it rises and stands. */
+      build: (p: ProjectId) => {
+        for (const st of remaining(this.state, p)) this.state.storage[st.item] = stored(this.state, st.item) + st.qty;
+        this.build(p);
+      },
+      /** A piece of drift partway in through the cove mouth. */
+      flotsam: (id: FlotsamId = "planks") => this.flotsam?.spawn(id, undefined, 30, this.tide.waterY) ?? null,
       tp: (x: number, y: number, z: number) => this.player.spawn(new THREE.Vector3(x, y, z), this.player.yaw),
       where: () => ({ x: +this.player.position.x.toFixed(2), y: +this.player.position.y.toFixed(2), z: +this.player.position.z.toFixed(2), yaw: +this.player.yaw.toFixed(3), mode: this.mode }),
       killAll: () => {

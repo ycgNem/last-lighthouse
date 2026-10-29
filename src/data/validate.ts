@@ -1,17 +1,27 @@
 // Content checks. Run by `npm test` and at boot in dev.
 //  1. Integrity: things the type system can't catch (duplicates, bad ranges, tells too short).
 //  2. Reachability: starting from a new game and using only *guaranteed* sources
-//     (yields with min > 0), can the chapter be finished? This is the softlock test.
+//     (yields with min > 0, and drift common enough to count on), can the
+//     chapter be finished? This is the softlock test.
 
+import { DECOR } from "./decor";
 import { ENEMIES } from "./enemies";
-import { ENEMY_IDS, ITEM_IDS, LOCATION_IDS, NODE_IDS, SKILL_IDS, type FlagId, type GearId, type ItemId, type LocationId, type ProjectId, type SkillId } from "./ids";
+import { DECOR_IDS, ENEMY_IDS, FLOTSAM_IDS, ITEM_IDS, LOCATION_IDS, NODE_IDS, PROJECT_IDS, SKILL_IDS, type FlagId, type GearId, type ItemId, type LocationId, type ProjectId, type SkillId } from "./ids";
 import { GEAR, ITEMS, STARTING_GEAR } from "./items";
 import { DEFAULT_STATIONS, PROJECTS, STAGES, type Requirements } from "./lighthouse";
 import { LOCATIONS } from "./locations";
 import { NODES } from "./nodes";
 import { MAIN_QUEST } from "./quests";
 import { RECIPES } from "./recipes";
+import { FLOTSAM, SALVAGE } from "./salvage";
 import { MAX_LEVEL } from "./skills";
+
+/** Owns `need`, or better in the same slot. */
+const owns = (gear: ReadonlySet<GearId>, need: GearId) => [...gear].some((g) => g === need || (GEAR[g].slot === GEAR[need].slot && GEAR[g].tier > GEAR[need].tier));
+
+/** Drift kinds common enough at some tide to count on. */
+const reliableDrift = () =>
+  FLOTSAM_IDS.filter((f) => (["low", "high"] as const).some((k) => FLOTSAM[f].odds[k] / FLOTSAM_IDS.reduce((n, g) => n + FLOTSAM[g].odds[k], 0) >= SALVAGE.reliableShare));
 
 export function validateIntegrity(): string[] {
   const errors: string[] = [];
@@ -34,7 +44,24 @@ export function validateIntegrity(): string[] {
     for (const y of n.yields) if (y.max < y.min) errors.push(`node "${id}" yield ${y.item} max < min`);
     if (n.keyItem && n.tide !== "any") errors.push(`key-item node "${id}" must be reachable at any tide`);
     if (n.kind === "fish" && !n.requiresGear) errors.push(`fishing node "${id}" must require a rod`);
+    if (n.kind === "wreckage" && (n.uses < 1 || n.yields.length === 0)) errors.push(`wreckage "${id}" must come apart into pieces that give something`);
+    if (n.kind === "wreckage" && n.level > 1) errors.push(`wreckage "${id}" gates on a skill level: only the hook it needs may gate it`);
   }
+
+  for (const id of FLOTSAM_IDS) {
+    const f = FLOTSAM[id];
+    for (const y of f.yields) if (y.max < y.min) errors.push(`flotsam "${id}" yield ${y.item} max < min`);
+    if (!f.yields.some((y) => y.min > 0)) errors.push(`flotsam "${id}" can come up empty`);
+    if (f.weight <= 0) errors.push(`flotsam "${id}" must weigh something`);
+  }
+
+  for (const id of PROJECT_IDS) {
+    const p = PROJECTS[id];
+    if (!(p.requires.items ?? []).length) errors.push(`plot "${id}" takes no materials`);
+    if ((p.requires.projects ?? []).includes(id)) errors.push(`plot "${id}" needs itself`);
+  }
+
+  for (const id of DECOR_IDS) if (DECOR[id].cost.length === 0) errors.push(`decor "${id}" costs nothing`);
 
   for (const id of ENEMY_IDS) {
     for (const a of ENEMIES[id].attacks) {
@@ -86,13 +113,15 @@ export function simulateProgression(): ReachabilityReport {
   const skillCap: Record<SkillId, number> = Object.fromEntries(SKILL_IDS.map((s) => [s, 1])) as Record<SkillId, number>;
 
   const offshore = () => [...projects].some((p) => PROJECTS[p].unlocksOffshore);
-  const reachable = (l: LocationId) => LOCATIONS[l].revealedAtStage <= stage && (l === "home" || l === "shore" || offshore());
+  const reachable = (l: LocationId) => LOCATIONS[l].revealedAtStage <= stage && (l === "home" || offshore());
   const stations = () => [...DEFAULT_STATIONS, ...[...projects].flatMap((p) => PROJECTS[p].unlocksStation ?? [])];
   const met = (req: Requirements) =>
     (req.items ?? []).every((s) => items.has(s.item)) &&
     (req.keyItems ?? []).every((k) => keyItems.has(k)) &&
     (req.projects ?? []).every((p) => projects.has(p)) &&
-    (req.flags ?? []).every((f) => flags.has(f));
+    (req.flags ?? []).every((f) => flags.has(f)) &&
+    (req.stage === undefined || stage >= req.stage);
+  const drift = reliableDrift();
 
   let changed = true;
   while (changed) {
@@ -111,11 +140,18 @@ export function simulateProgression(): ReachabilityReport {
       }
     };
 
+    // The cove at home: the drift needs only the hook you start with.
+    for (const f of drift) {
+      for (const y of FLOTSAM[f].yields) if (y.min > 0) mark(items, y.item);
+      raiseSkill("salvaging");
+    }
+
     for (const l of LOCATION_IDS.filter(reachable)) {
-      for (const { node } of LOCATIONS[l].nodes) {
+      for (const { node, needsProject } of LOCATIONS[l].nodes) {
         const n = NODES[node];
-        if (n.skill && skillCap[n.skill] < n.level) continue;
-        if (n.requiresGear && !gear.has(n.requiresGear)) continue;
+        if (needsProject && !projects.has(needsProject)) continue;
+        if (n.kind !== "wreckage" && n.skill && skillCap[n.skill] < n.level) continue;
+        if (n.requiresGear && !owns(gear, n.requiresGear)) continue;
         for (const y of n.yields) if (y.min > 0) mark(items, y.item);
         if (n.keyItem) mark(keyItems, n.keyItem);
         if (n.skill && n.xp > 0) raiseSkill(n.skill);
@@ -130,7 +166,7 @@ export function simulateProgression(): ReachabilityReport {
 
     for (const r of RECIPES) {
       if (!stations().includes(r.station) || skillCap[r.skill] < r.level) continue;
-      if (r.requiresGear && !gear.has(r.requiresGear)) continue;
+      if (r.requiresGear && !owns(gear, r.requiresGear)) continue;
       if (!r.inputs.every((s) => items.has(s.item))) continue;
       if (r.output.kind === "item") mark(items, r.output.item);
       else mark(gear, r.output.gear);

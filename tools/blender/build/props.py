@@ -243,27 +243,6 @@ def kelp_bed():
     m.build("PROP_kelp_bed", loc=place(), grime=0.1)
 
 
-def glass_bed():
-    """A low sandy hump strewn with pebbles, shells and frosted sea glass."""
-    m = MB(5)
-    rnd = random.Random(5)
-    m.lathe([(0.0, 0.09), (0.35, 0.085), (0.65, 0.06), (0.88, 0.02), (1.0, -0.03)], mat=P["sand"], segs=18)
-    for i in range(12):
-        a = rnd.random() * TAU
-        r = 0.15 + rnd.random() * 0.7
-        m.rock(0.04 + rnd.random() * 0.05, at=(math.cos(a) * r, 0.06 - r * 0.05, math.sin(a) * r * 0.85), mat=rnd.choice((P["rock"], P["rock_dark"], P["stone_dark"])), seed=50 + i, squash=0.5, cuts=2, subdiv=1)
-    for i in range(16):
-        a = rnd.random() * TAU
-        r = rnd.random() * 0.72
-        s = 0.045 + rnd.random() * 0.04
-        m.sphere(s, at=(math.cos(a) * r, 0.11 - r * 0.07, math.sin(a) * r * 0.85), mat=SEAGLASS[i % len(SEAGLASS)], scale=(1.35, 0.42, 1.0), subdiv=1, yaw=rnd.random() * TAU, jit=0.08)
-    # Two cockle shells.
-    for i, (x, z) in enumerate(((0.35, -0.3), (-0.5, 0.15))):
-        prof = [(0.0, 0.0), (0.07, 0.0), (0.065, 0.02), (0.04, 0.035), (0.0, 0.04)]
-        m.lathe(prof, at=(x, 0.08, z), mat=P["bone"], segs=10, staves=0.12, tint=1.0, jit=0.04)
-    m.build("PROP_glass_bed", loc=place(), grime=0.0)
-
-
 def reinforced_wreckage():
     """A torn-off piece of hull leaning back: tarred strakes on two frames,
     iron knees, brass bolts and a brass porthole. The brass is why you come."""
@@ -354,31 +333,6 @@ def supply_crate():
     for side in (-1, 1):
         m.tube([(side * 0.47, 0.6, -0.16), (side * 0.53, 0.52, -0.1), (side * 0.53, 0.52, 0.1), (side * 0.47, 0.6, 0.16)], 0.018, mat=P["rope"], segs=5)
     m.build("PROP_supply_crate", loc=place())
-
-
-def sealed_cache():
-    """A sea chest half sunk in sand, barnacled, chained and padlocked."""
-    m = MB(8)
-    rnd = random.Random(9)
-    m.sphere(0.9, at=(0, -0.08, 0), mat=P["sand"], scale=(1.0, 0.22, 0.75), subdiv=2)
-    m.box((1.2, 0.5, 0.78), at=(0, 0.0, 0), mat=P["hull_dark"])
-    # Camel-back lid: a half-round prism along X.
-    arc = [(math.cos(a) * 0.4, math.sin(a) * 0.22) for a in [k / 10 * math.pi for k in range(11)]]
-    m.prism(arc, 1.2, at=(0, 0.5, 0), mat=P["hull"], yaw=math.pi / 2, bev=0.01)
-    # Iron bands over the lid and round the body.
-    for x in (-0.42, 0.0, 0.42):
-        band = [(x, 0.0, -0.405)] + [(x, 0.5 + math.sin(a) * 0.235, -math.cos(a) * 0.415) for a in [k / 10 * math.pi for k in range(11)]] + [(x, 0.0, 0.405)]
-        m.tube(band, 0.03, mat=P["iron"], segs=4, cap=True)
-    m.box((1.24, 0.07, 0.82), at=(0, 0.42, 0), mat=P["iron"], bev=0.01)
-    # Chain across the lid to a big padlock.
-    chain(m, (-0.62, 0.38, 0.42), (0.0, 0.68, 0.36), link=0.1, thick=0.018, mat=P["rust"], sag=-0.05)
-    chain(m, (0.0, 0.68, 0.36), (0.62, 0.38, 0.42), link=0.1, thick=0.018, mat=P["rust"], sag=-0.05)
-    m.box((0.18, 0.2, 0.08), at=(0, 0.2, 0.43), mat=P["brass"], bev=0.015)
-    m.ring(0.065, 0.018, at=(0, 0.42, 0.43), mat=P["iron_light"], pitch=math.pi / 2, segs=12, tube_segs=5)
-    barnacles(m, rnd, (0.0, 0.12, 0.4), (0.6, 0.1, 0.01), 18, up=(0, 0, 1), size=0.04)
-    barnacles(m, rnd, (0.55, 0.3, 0.0), (0.02, 0.15, 0.35), 8, size=0.035)
-    seaweed_clump(m, rnd, (-0.5, 0.02, 0.45), count=3, length=0.5)
-    m.build("PROP_sealed_cache", loc=place(), grime=0.3)
 
 
 def strongbox():
@@ -840,9 +794,501 @@ def gull():
         m.build(name, loc=place(), ground=False, ao=0.2, grime=0.0)
 
 
-for build in (driftwood, scrap_pile, kelp_bed, glass_bed, reinforced_wreckage, supply_crate, sealed_cache, strongbox, lens_pedestal,
+# ------------------------------------------------------------ the cove's drift
+# What the tide brings into the Rest's cove (src/data/salvage.ts), hooked out
+# and hauled in. Each floats with its origin on the water line: y < 0 rides
+# under the surface (darker and wet), and its size reads from the beach 15 m off.
+
+ACROSS = math.pi / 2  # roll: a Y-axis lathe or cylinder lies along X
+
+
+def loop_yz(x, cy, hy, hz, n=14):
+    """A closed loop round the X axis (rope lashings round a bundle)."""
+    return [(x, cy + hy * math.sin(k / n * TAU), hz * math.cos(k / n * TAU)) for k in range(n + 1)]
+
+
+def flot_planks():
+    """A bundle of salvaged planks lashed together: two layers, ragged ends, a trailing rope."""
+    m = MB(701)
+    rnd = random.Random(701)
+    woods = (P["timber"], P["timber_light"], P["driftwood"], P["hull"], P["timber_pale"])
+    for layer, n in ((0, 4), (1, 3)):
+        for k in range(n):
+            z = -0.36 + k * 0.24 + (0.12 if layer else 0.0) + (rnd.random() - 0.5) * 0.03
+            L = 2.0 + rnd.random() * 0.55
+            m.plank(L, 0.22, 0.055, at=((rnd.random() - 0.5) * 0.35, -0.09 + layer * 0.06, z), mat=woods[(k + layer * 2) % len(woods)], yaw=(rnd.random() - 0.5) * 0.08, warp=0.06, tint=0.82 + 0.3 * rnd.random())
+    for x in (-0.62, 0.55):
+        m.tube(loop_yz(x, -0.02, 0.085, 0.47), 0.022, mat=P["rope"], segs=4, cap=False)
+    m.tube([(0.55, 0.06, 0.45), (0.7, 0.0, 0.62), (0.95, -0.01, 0.7), (1.25, -0.02, 0.62)], [0.02, 0.019, 0.017, 0.012], mat=P["rope"], segs=4)
+    seaweed_clump(m, rnd, (-0.9, -0.02, -0.3), count=3, length=0.5)
+    m.build("PROP_flot_planks", loc=place(), ground=False, grime=0.0, ao=0.55, waterline=0.0)
+
+
+def flot_drum():
+    """An oil drum adrift on its side: rolling hoops, rust through a faded red band, the bung."""
+    m = MB(702)
+    R, L, cy = 0.29, 0.88, -0.13
+    m.lathe([(0.0, -L / 2), (R - 0.025, -L / 2), (R, -L / 2 + 0.025), (R, L / 2 - 0.025), (R - 0.025, L / 2), (0.0, L / 2)], at=(0, cy, 0), mat=P["rust"], segs=18, roll=ACROSS)
+    m.lathe([(R + 0.004, -0.17), (R + 0.004, 0.17)], at=(0, cy, 0), mat=Paint(P["paint_red"].mat, 0x8A3A2C), segs=18, roll=ACROSS, cap=False, tint=0.9)
+    for x in (-0.3, -0.12, 0.12, 0.3):
+        m.ring(R + 0.012, 0.014, at=(x, cy, 0), mat=P["iron_light"] if abs(x) > 0.2 else P["rust_light"], roll=ACROSS, segs=18, tube_segs=4)
+    for s in (-1, 1):
+        m.ring(R - 0.02, 0.016, at=(s * (L / 2 - 0.004), cy, 0), mat=P["iron"], roll=ACROSS, segs=18, tube_segs=4)
+    m.cyl(0.04, 0.04, 0.03, at=(L / 2 + 0.012, cy + 0.16, 0.08), mat=P["iron_light"], segs=8, roll=-ACROSS, centered=True, bev=0)
+    m.cyl(0.025, 0.025, 0.02, at=(L / 2 + 0.012, cy - 0.15, -0.1), mat=P["iron_light"], segs=6, roll=-ACROSS, centered=True, bev=0)
+    m.build("PROP_flot_drum", loc=place(), ground=False, grime=0.0, ao=0.5, waterline=0.0)
+
+
+def flot_kelp():
+    """A raft of torn kelp on the swell: a knot of stipes and holdfast, blades spread round it, bladders."""
+    m = MB(703)
+    rnd = random.Random(703)
+    m.rock(0.16, at=(0.05, -0.08, 0.0), mat=P["kelp_dark"], seed=703, squash=0.6, jitter=0.5, subdiv=1)
+    for i in range(13):
+        a = i / 13 * TAU + rnd.random() * 0.4
+        L = 0.7 + rnd.random() * 0.7
+        pts = []
+        for k in range(7):
+            t = k / 6
+            r = 0.1 + t * L
+            pts.append((math.cos(a + math.sin(t * 4 + i) * 0.18) * r, 0.03 + 0.03 * math.sin(t * 7 + i), math.sin(a + math.sin(t * 3 + i) * 0.18) * r))
+        ribbon(m, pts, [0.05, 0.11, 0.16, 0.18, 0.16, 0.11, 0.03], KELP[i % len(KELP)], tint=0.9 + 0.2 * rnd.random())
+        for k in (1, 2):
+            x, y, z = pts[k]
+            m.sphere(0.035, at=(x, y + 0.025, z), mat=KELP[2], scale=(1.0, 0.8, 1.3), subdiv=1)
+    m.build("PROP_flot_kelp", loc=place(), ground=False, grime=0.0, ao=0.4, waterline=-0.005)
+
+
+def flot_bottles():
+    """Glass fishing floats in a cord net, with two bottles caught in it and a rope tail."""
+    m = MB(704)
+    glass = [Paint(FROST, c) for c in (0x5F9F7E, 0x4F7FB8, 0x8FC9A8, 0xC98A3A, 0x6FAF8A)]
+    floats = [(0.0, -0.02, 0.0, 0.17), (0.3, -0.05, 0.12, 0.14), (-0.27, -0.04, 0.16, 0.15), (0.12, -0.06, -0.28, 0.13), (-0.2, -0.05, -0.22, 0.12)]
+    for i, (x, y, z, r) in enumerate(floats):
+        m.uvsphere(r, at=(x, y, z), mat=glass[i % len(glass)], segs=14, rings=9)
+        # The net round each: meridians and a girdle.
+        for k in range(4):
+            a = k / 4 * math.pi
+            pts = [(x + math.cos(a) * math.cos(b) * (r + 0.008), y + math.sin(b) * (r + 0.008), z + math.sin(a) * math.cos(b) * (r + 0.008)) for b in (j / 10 * TAU for j in range(11))]
+            m.tube(pts, 0.006, mat=P["rope"], segs=3, cap=False)
+        m.ring(r + 0.01, 0.008, at=(x, y, z), mat=P["rope"], segs=14, tube_segs=3)
+    # Cords tying them together, then the tail.
+    for a, b in ((0, 1), (0, 2), (0, 3), (0, 4), (1, 3), (2, 4)):
+        pa, pb = floats[a], floats[b]
+        m.tube([(pa[0], pa[1] + 0.05, pa[2]), ((pa[0] + pb[0]) / 2, 0.06, (pa[2] + pb[2]) / 2), (pb[0], pb[1] + 0.05, pb[2])], 0.009, mat=P["rope"], segs=3)
+    m.tube([(0.3, 0.0, 0.12), (0.5, -0.01, 0.3), (0.72, -0.02, 0.32), (0.9, -0.03, 0.5)], 0.014, mat=P["rope"], segs=4)
+    # Two bottles caught in the mesh, necks up out of the water.
+    for k, (x, z, yaw) in enumerate(((0.42, -0.18, 0.6), (-0.42, 0.0, 2.2))):
+        prof = [(0.0, -0.12), (0.055, -0.12), (0.06, 0.06), (0.03, 0.1), (0.02, 0.17), (0.022, 0.19), (0.0, 0.19)]
+        m.lathe(prof, at=(x, -0.02, z), mat=glass[k * 2], segs=10, pitch=1.35, yaw=yaw)
+    m.build("PROP_flot_bottles", loc=place(), ground=False, grime=0.0, ao=0.5, waterline=0.0)
+
+
+def flot_barrel():
+    """A barrel adrift on its side, half under: bellied staves, hoops, a plugged bung."""
+    m = MB(705)
+    prof = [(0.3, -0.45), (0.335, -0.33), (0.36, -0.15), (0.365, 0.0), (0.36, 0.15), (0.335, 0.33), (0.3, 0.45)]
+    cy = -0.14
+    m.lathe(prof, at=(0, cy, 0), mat=P["timber"], segs=14, staves=0.14, cap=True, roll=ACROSS)
+    for u in (-0.36, -0.13, 0.13, 0.36):
+        r = 0.3 + 0.065 * math.cos(math.pi * u / 0.9) + 0.012
+        m.ring(r, 0.016, at=(u, cy, 0), mat=P["iron"], segs=16, tube_segs=4, roll=ACROSS)
+    m.cyl(0.035, 0.035, 0.03, at=(0, cy + 0.36, 0), mat=P["hull_dark"], segs=8, bev=0)
+    m.build("PROP_flot_barrel", loc=place(), ground=False, grime=0.0, ao=0.5, waterline=0.0)
+
+
+def flot_log():
+    """A whole drift log, bleached and stripped: the root flare at one end, a snapped branch."""
+    m = MB(706)
+    rnd = random.Random(706)
+    pts, radii = [], []
+    for i in range(12):
+        t = i / 11
+        pts.append((-1.9 + t * 3.9, -0.07 + math.sin(t * 2.4) * 0.03, math.sin(t * 1.8 + 0.4) * 0.16))
+        radii.append(0.31 - 0.14 * t ** 0.9)
+    m.tube(pts, radii, mat=P["driftwood"], segs=11)
+    m.sphere(0.36, at=(-1.95, -0.07, 0.05), mat=P["driftwood_dark"], scale=(0.75, 0.85, 1.0), subdiv=2)
+    for k in range(7):
+        a = k / 7 * TAU + rnd.random() * 0.6
+        L = 0.4 + rnd.random() * 0.3
+        base = (-2.02, -0.07 + math.sin(a) * 0.16, 0.05 + math.cos(a) * 0.16)
+        p1 = (base[0] - 0.22, base[1] + math.sin(a) * L * 0.4, base[2] + math.cos(a) * L * 0.45)
+        p2 = (base[0] - 0.36 - rnd.random() * 0.2, base[1] + math.sin(a) * L * 0.6 - 0.1, base[2] + math.cos(a) * L * 0.8)
+        p3 = (p2[0] + 0.12, p2[1] - 0.18, p2[2] + math.cos(a) * 0.14)
+        m.tube([base, p1, p2, p3], [0.12, 0.09, 0.06, 0.035], mat=P["driftwood_dark"] if k % 2 else P["driftwood"], segs=6)
+    for t, a in ((0.45, 1.1), (0.72, -0.8)):
+        x, y, z = pts[int(t * 11)]
+        m.tube([(x, y, z), (x + 0.16, y + 0.24, z + 0.22 * math.sin(a))], [0.08, 0.045], mat=P["driftwood"], segs=7)
+    m.build("PROP_flot_log", loc=place(), ground=False, grime=0.0, ao=0.45, waterline=0.0)
+
+
+def flot_crate():
+    """A ship's crate, lid nailed down: brass corner plates, rope beckets, a stencilled band. Worth the swim."""
+    m = MB(707)
+    sx, sy, sz = 0.92, 0.66, 0.68
+    slatted_crate(m, (sx, sy, sz), at=(0, -0.38, 0), wood=P["timber_pale"], frame=P["hull"])
+    for dx in (-1, 1):
+        for dz in (-1, 1):
+            for y in (-0.38, -0.38 + sy - 0.12):
+                m.box((0.13, 0.12, 0.13), at=(dx * (sx / 2 - 0.05), y, dz * (sz / 2 - 0.05)), mat=P["brass"], bev=0.012)
+    m.box((0.6, 0.15, 0.006), at=(0, -0.12, sz / 2 + 0.018), mat=Paint(P["paint_white"].mat, 0xB9B2A2), bev=0)
+    for k in range(5):
+        m.box((0.07, 0.07, 0.004), at=(-0.2 + k * 0.1, -0.08, sz / 2 + 0.022), mat=P["tar"], bev=0)
+    for side in (-1, 1):
+        m.tube([(side * (sx / 2 + 0.005), 0.16, -0.14), (side * (sx / 2 + 0.07), 0.08, -0.08), (side * (sx / 2 + 0.07), 0.08, 0.08), (side * (sx / 2 + 0.005), 0.16, 0.14)], 0.017, mat=P["rope"], segs=5)
+    m.build("PROP_flot_crate", loc=place(), ground=False, grime=0.0, ao=0.55, waterline=0.0)
+
+
+# ------------------------------------------------------------ the cove's wrecks
+# Wreckage on the Rest's cove floor, bared at low water. Every throw of the hook
+# tears a piece off: each piece is a child named *_piece_<n> that the game hides
+# as it goes, leaving the bones (the object itself) where they lie.
+
+
+def wreck_boat():
+    """A clinker fishing boat bedded in the sand, listing to port, bow up: keel,
+    stem, frames, thwarts and the low side are the bones; the six upper strakes
+    of her high side come away, top first, until her ribs show."""
+    stations = [(-2.5, 0.62, 0.92, -0.32, 0.86), (-1.7, 0.86, 1.02, -0.45, 0.84), (-0.6, 0.94, 1.08, -0.5, 0.78),
+                (0.55, 0.92, 1.1, -0.5, 0.72), (1.5, 0.76, 1.14, -0.46, 0.6), (2.2, 0.44, 1.2, -0.38, 0.42), (2.7, 0.05, 1.3, -0.28, 0.15)]
+    strakes = 7
+    th = 0.42  # her list to port
+    c, s = math.cos(th), math.sin(th)
+
+    def T(p):
+        x, y, z = p
+        return (x * c - y * s, x * s + y * c + 0.04 + (z + 2.5) * 0.09, z)
+
+    def curve(st, side):
+        z, b, d, yk, f = st
+        out = []
+        for j in range(strakes + 1):
+            u = j / strakes
+            x = 2 * (1 - u) * u * b * f + u * u * b
+            y = (1 - u) ** 2 * yk + 2 * (1 - u) * u * yk + u * u * (yk + d)
+            out.append((side * x, y, z))
+        return out
+
+    def band(curves, j, side, thick=0.035, lap=0.012):
+        secs = []
+        for cv in curves:
+            (x0, y0, z), (x1, y1, _) = cv[j], cv[j + 1]
+            tx, ty = x1 - x0, y1 - y0
+            L = math.hypot(tx, ty) or 1.0
+            nx, ny = side * ty / L, -side * tx / L
+            o = lap * (j % 2)
+            secs.append([T((x0 + nx * o, y0 + ny * o, z)), T((x1 + nx * o, y1 + ny * o, z)), T((x1 - nx * thick, y1 - ny * thick, z)), T((x0 - nx * thick, y0 - ny * thick, z))])
+        return secs
+
+    def strake_paint(j):
+        # Bare, salt-greyed planking; the sheer strake keeps a little of its old paint.
+        return (Paint(P["paint_blue"].mat, 0x4A6468), 0.95) if j == strakes - 1 else (P["hull"] if j % 2 else P["driftwood_dark"], 0.9 + 0.08 * (j % 3))
+
+    star = [curve(st, 1) for st in stations]
+    port = [curve(st, -1) for st in stations]
+    bones = MB(720)
+    for j in range(strakes):
+        mat, tint = strake_paint(j)
+        bones.loft(band(port, j, -1), mat=mat, closed=True, cap=True, tint=tint * 0.92)
+    bones.loft(band(star, 0, 1), mat=P["driftwood_dark"], closed=True, cap=True)
+    # Frames: a rib inside the planking at every station, gunwale to gunwale.
+    for st, sc, pc in zip(stations, star, port):
+        if abs(st[0]) > 2.4:
+            continue
+        rib = [T((x * 0.95, y + 0.03, z)) for x, y, z in reversed(pc)] + [T((x * 0.95, y + 0.03, z)) for x, y, z in sc[1:]]
+        bones.tube(rib, 0.045, mat=P["timber"], segs=5)
+    # Thwarts across her, one cracked through.
+    for z, b, d, yk, f in (stations[2], stations[4]):
+        y = yk + d - 0.22
+        bones.tube([T((-b * 0.82, y, z)), T((0.0, y + (0.04 if z > 1 else 0.0), z)), T((b * 0.82, y - (0.08 if z > 1 else 0.0), z))], 0.06, mat=P["timber_light"], segs=4)
+    bones.tube([T((0.0, st[3] - 0.08, st[0])) for st in stations], 0.075, mat=P["hull_dark"], segs=6)
+    bones.tube([T((0.0, -0.36, 2.7)), T((0.0, 0.4, 2.95)), T((0.0, 1.3, 3.0))], 0.07, mat=P["hull_dark"], segs=6)
+    bones.tube([T((0.0, -0.3, -2.5)), T((0.0, 0.62, -2.62))], 0.08, mat=P["hull_dark"], segs=6)
+    # Sand silted up inside her, weed in the bilge, barnacles along the low side.
+    bones.rock(1.0, at=(0.15, -0.25, -0.1), mat=Paint(P["sand"].mat, 0x9A8C6C), seed=721, squash=0.35, jitter=0.12, scale=(0.6, 1.0, 2.0), flat=0.1)
+    rnd = random.Random(721)
+    seaweed_clump(bones, rnd, (-0.3, 0.12, -1.0), count=5, length=0.7)
+    seaweed_clump(bones, rnd, (-1.2, 0.05, 1.2), count=4, length=0.6)
+    barnacles(bones, rnd, T((-0.9, 0.1, 0.0)), (0.15, 0.2, 1.8), 16, size=0.03)
+    ob = bones.build("PROP_wreck_boat", loc=place(), ao=0.6, grime=0.15, tideline=True)
+    # The pieces: the six strakes of her high side above the garboard, top first.
+    for k, j in enumerate(range(strakes - 1, 0, -1)):
+        pm = MB(722 + k)
+        mat, tint = strake_paint(j)
+        pm.loft(band(star, j, 1), mat=mat, closed=True, cap=True, tint=tint)
+        if j == strakes - 1:
+            pm.tube([T((x + 0.01, y + 0.02, z)) for x, y, z in (cv[-1] for cv in star)], 0.045, mat=P["timber"], segs=5)
+        pm.build(f"boat_piece_{k}", parent=ob, ao=0.5, grime=0.1, ground=False, tideline=True)
+    return ob
+
+
+def wreck_pilings():
+    """What's left of an old fish weir: four rotten pilings with a fallen cross-beam,
+    kelp and barnacles to the high-water mark. The tops come away; the stumps stay."""
+    rnd = random.Random(730)
+    piles = [(-1.1, 0.25, 0.22, 2.3), (0.0, -0.15, 0.24, 1.7), (1.2, 0.2, 0.2, 2.6), (2.2, -0.3, 0.18, 1.0)]
+    bones = MB(730)
+    for i, (x, z, r, h) in enumerate(piles):
+        stump = h if i == 3 else 0.42
+        bones.cyl(r, r * 0.92, stump + 0.4, at=(x, -0.4, z), mat=P["driftwood_dark"], segs=9)
+        barnacles(bones, rnd, (x, 0.1, z), (r * 1.05, 0.15, r * 1.05), 8, size=0.03)
+    seaweed_clump(bones, rnd, (0.4, 0.05, 0.6), count=6, length=0.9)
+    ob = bones.build("PROP_wreck_pilings", loc=place(), ao=0.6, grime=0.2, tideline=True)
+    for k, i in enumerate((2, 0, 1)):
+        x, z, r, h = piles[i]
+        pm = MB(731 + k)
+        # The upper part, rotted to a ragged top.
+        top = [(r * 0.92, 0.0), (r * 0.9, (h - 0.42) * 0.5), (r * 0.8, h - 0.42 - 0.18), (r * 0.45, h - 0.42)]
+        pm.lathe(top, at=(x, 0.42, z), mat=P["driftwood_dark"], segs=9, roll=(rnd.random() - 0.5) * 0.12, cap=True)
+        barnacles(pm, rnd, (x, 0.9, z), (r * 1.05, 0.35, r * 1.05), 10, size=0.03)
+        if i == 2:
+            # The cross-beam, spiked to this one and fallen across the next.
+            pm.box((2.5, 0.18, 0.2), at=(0.1, 1.15, 0.05), mat=P["hull"], roll=0.42, yaw=0.15, centered=True, bev=0.02)
+            seaweed_clump(pm, rnd, (0.5, 0.95, 0.0), count=3, length=0.5)
+        pm.build(f"pilings_piece_{k}", parent=ob, ao=0.5, grime=0.1, ground=False, tideline=True)
+    return ob
+
+
+def wreck_boiler():
+    """A steamer's boiler rolled up the cove floor and half sunk in it: riveted
+    shell, the firebox end open and black. Dome, smokebox door, steam pipe, a
+    patch plate and the valve all come away; the shell stays."""
+    rnd = random.Random(740)
+    R, L, cy = 0.92, 3.2, 0.32
+    bones = MB(740)
+    bones.lathe([(R, -L / 2), (R, L / 2)], at=(0, cy, 0), mat=P["rust"], segs=22, roll=ACROSS, cap=False)
+    bones.lathe([(R - 0.06, L / 2 - 0.02), (R - 0.06, -L / 2 + 0.02)], at=(0, cy, 0), mat=P["tar"], segs=22, roll=ACROSS, cap=False)
+    bones.lathe([(0.0, L / 2 - 0.25), (R - 0.05, L / 2 - 0.25)], at=(0, cy, 0), mat=P["rust_light"], segs=22, roll=ACROSS, cap=False)
+    for x in (-L / 2 + 0.05, -0.55, 0.55, L / 2 - 0.05):
+        bones.ring(R + 0.01, 0.025, at=(x, cy, 0), mat=P["rust_light"] if abs(x) < 1 else P["iron"], roll=ACROSS, segs=22, tube_segs=4)
+        for k in range(16):
+            a = k / 16 * TAU
+            bones.sphere(0.022, at=(x + 0.04, cy + math.sin(a) * (R + 0.02), math.cos(a) * (R + 0.02)), mat=P["iron"], subdiv=0)
+    # The firebox end: a round mouth, black inside.
+    bones.ring(0.42, 0.05, at=(-L / 2 - 0.01, cy - 0.12, 0), mat=P["iron"], roll=ACROSS, segs=16, tube_segs=4)
+    bones.cyl(0.4, 0.4, 0.05, at=(-L / 2 + 0.02, cy - 0.12, 0), mat=Paint(P["tar"].mat, 0x120F0C), segs=16, roll=ACROSS, centered=True, bev=0)
+    # Sand banked against the low side, weed in its lee.
+    bones.rock(1.0, at=(0.0, -0.1, -0.75), mat=Paint(P["sand"].mat, 0x9A8C6C), seed=742, squash=0.3, jitter=0.15, scale=(1.9, 1.0, 0.9), flat=0.1)
+    seaweed_clump(bones, rnd, (0.3, 0.32, -0.9), count=6, length=0.8)
+    barnacles(bones, rnd, (0.0, cy - 0.3, 0.0), (1.4, 0.25, R), 22, size=0.035)
+    ob = bones.build("PROP_wreck_boiler", loc=place(), ao=0.6, grime=0.2, tideline=True)
+
+    def dome(pm):
+        pm.cyl(0.3, 0.3, 0.42, at=(0.4, cy + R - 0.06, 0), mat=P["rust"], segs=14)
+        pm.cyl(0.38, 0.38, 0.06, at=(0.4, cy + R - 0.06, 0), mat=P["iron"], segs=14, bev=0.01)
+        pm.lathe([(0.3, 0.0), (0.26, 0.1), (0.14, 0.18), (0.0, 0.2)], at=(0.4, cy + R + 0.36, 0), mat=P["rust_light"], segs=14)
+
+    def door(pm):
+        pm.cyl(0.62, 0.62, 0.06, at=(L / 2 + 0.03, cy, 0), mat=P["iron"], segs=18, roll=ACROSS, centered=True, bev=0.01)
+        pm.cyl(0.07, 0.07, 0.12, at=(L / 2 + 0.08, cy, 0), mat=P["iron_light"], segs=8, roll=ACROSS, centered=True, bev=0)
+        pm.box((0.04, 0.5, 0.06), at=(L / 2 + 0.12, cy - 0.25, 0), mat=P["iron_light"], bev=0)
+        for k in range(10):
+            a = k / 10 * TAU
+            pm.sphere(0.025, at=(L / 2 + 0.07, cy + math.sin(a) * 0.55, math.cos(a) * 0.55), mat=P["rust_light"], subdiv=0)
+
+    def pipe(pm):
+        pm.tube([(-1.2, cy + R + 0.12, -0.25), (0.0, cy + R + 0.14, -0.3), (1.1, cy + R + 0.1, -0.3), (1.5, cy + 0.6, -0.55), (1.7, cy - 0.1, -0.8)], 0.08, mat=P["iron_light"], segs=8)
+        for x in (-0.6, 0.6):
+            pm.ring(0.1, 0.025, at=(x, cy + R + 0.13, -0.28), mat=P["rust"], roll=ACROSS, segs=10, tube_segs=4)
+
+    def plate(pm):
+        th = 0.65
+        ny, nz = math.sin(th), math.cos(th)
+        pm.box((1.0, 0.6, 0.04), at=(-0.7, cy + ny * (R + 0.02), nz * (R + 0.02)), mat=P["rust_light"], pitch=-(math.pi / 2 - th), centered=True, bev=0.01)
+        for dx in (-0.42, 0.42):
+            for dy in (-0.24, 0.24):
+                pm.sphere(0.025, at=(-0.7 + dx, cy + ny * (R + 0.05) + dy * nz, nz * (R + 0.05) - dy * ny), mat=P["iron"], subdiv=0)
+
+    def valve(pm):
+        pm.cyl(0.07, 0.07, 0.35, at=(-0.9, cy + R - 0.05, 0.1), mat=P["iron"], segs=8, bev=0)
+        pm.ring(0.2, 0.025, at=(-0.9, cy + R + 0.32, 0.1), mat=P["brass"], segs=14, tube_segs=4)
+        for k in range(4):
+            a = k / 4 * TAU
+            pm.tube([(-0.9, cy + R + 0.32, 0.1), (-0.9 + math.cos(a) * 0.2, cy + R + 0.32, 0.1 + math.sin(a) * 0.2)], 0.014, mat=P["brass"], segs=4)
+
+    for k, part in enumerate((dome, door, pipe, plate, valve)):
+        pm = MB(741 + k)
+        part(pm)
+        pm.build(f"boiler_piece_{k}", parent=ob, ao=0.5, grime=0.1, ground=False, tideline=True)
+    return ob
+
+
+# ------------------------------------------------------------- building the Rest
+
+
+def plot_board():
+    """The board at a ruined plot: two driftwood posts, a planked board with a
+    chalked sketch of what will stand here, a sack of nails at its foot."""
+    m = MB(750)
+    for x in (-0.55, 0.55):
+        m.box((0.1, 1.45, 0.1), at=(x, 0.0, 0.0), mat=P["driftwood_dark"], roll=(0.03 if x > 0 else -0.02), bev=0.015)
+    for k in range(3):
+        m.plank(1.3, 0.2, 0.04, at=(0.0, 0.78 + k * 0.2, 0.06), mat=P["hull"], warp=0.02, tint=0.8 + 0.1 * k)
+    chalk = Paint(P["paint_white"].mat, 0xD8D4C8)
+    # A house: walls, a roof, a door; tally marks down the side.
+    for a, b in (((-0.32, 0.86), (0.18, 0.86)), ((-0.32, 0.86), (-0.32, 1.12)), ((0.18, 0.86), (0.18, 1.12)), ((-0.38, 1.1), (-0.07, 1.32)), ((-0.07, 1.32), (0.24, 1.1)), ((-0.12, 0.86), (-0.12, 1.0)), ((-0.02, 0.86), (-0.02, 1.0))):
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        m.box((math.hypot(dx, dy), 0.018, 0.006), at=((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, 0.104), mat=chalk, roll=math.atan2(dy, dx), centered=True, bev=0)
+    for k in range(4):
+        m.box((0.1, 0.018, 0.006), at=(0.42, 0.9 + k * 0.09, 0.104), mat=chalk, centered=True, bev=0)
+    m.lathe([(0.0, 0.0), (0.16, 0.0), (0.19, 0.12), (0.15, 0.24), (0.06, 0.3), (0.0, 0.3)], at=(0.75, 0.0, 0.25), mat=P["canvas"], segs=9)
+    m.tube([(0.7, 0.27, 0.2), (0.75, 0.31, 0.25), (0.8, 0.27, 0.3)], 0.012, mat=P["rope"], segs=4)
+    m.rock(0.14, at=(-0.6, 0.0, 0.2), mat=P["rock"], seed=751, squash=0.6)
+    m.build("PROP_plot_board", loc=place())
+
+
+# ------------------------------------------------------------------- decor
+# Build mode's placeables (src/data/decor.ts): footprint centred on the origin,
+# front facing +Z, sized to the footprint the game keeps clear round them.
+
+FIRE = kit.material("FIRE", 0x40200C, rough=0.9, emit=0xFF8A2A, strength=1.8)
+
+
+def decor_brazier():
+    """An iron fire basket on three legs, banked coals glowing in it."""
+    m = MB(760)
+    iron = P["iron"]
+    for k in range(3):
+        a = k / 3 * TAU + 0.3
+        m.tube([(math.cos(a) * 0.36, 0.0, math.sin(a) * 0.36), (math.cos(a) * 0.24, 0.45, math.sin(a) * 0.24), (math.cos(a) * 0.3, 0.62, math.sin(a) * 0.3)], 0.025, mat=iron, segs=5)
+    for k in range(10):
+        a = k / 10 * TAU
+        m.tube([(math.cos(a) * 0.12, 0.6, math.sin(a) * 0.12), (math.cos(a) * 0.33, 0.85, math.sin(a) * 0.33)], 0.016, mat=iron, segs=4)
+    for y, r in ((0.6, 0.13), (0.73, 0.23), (0.85, 0.33)):
+        m.ring(r, 0.018, at=(0, y, 0), mat=iron, segs=16, tube_segs=4)
+    m.lathe([(0.0, 0.66), (0.24, 0.72), (0.3, 0.8), (0.18, 0.86), (0.0, 0.87)], mat=FIRE, segs=12)
+    rnd = random.Random(760)
+    for k in range(7):
+        a, d = rnd.random() * TAU, rnd.random() * 0.2
+        m.rock(0.06 + rnd.random() * 0.04, at=(math.cos(a) * d, 0.82, math.sin(a) * d), mat=FIRE, seed=761 + k, subdiv=1, squash=0.7)
+    for a in (0.4, 2.3, 4.2):
+        m.tube([(math.cos(a) * 0.25, 0.83, math.sin(a) * 0.25), (math.cos(a) * 0.02, 0.93, math.sin(a) * 0.02)], 0.035, mat=P["tar"], segs=5)
+    m.build("PROP_decor_brazier", loc=place())
+
+
+def decor_fence():
+    """A run of post-and-rail fence, 2.4 m: weathered posts, two rails, one mended."""
+    m = MB(762)
+    rnd = random.Random(762)
+    for x in (-1.15, 0.0, 1.15):
+        m.box((0.11, 1.05, 0.11), at=(x, 0.0, 0.0), mat=P["driftwood_dark"], roll=(rnd.random() - 0.5) * 0.05, bev=0.015)
+        m.cyl(0.07, 0.0, 0.08, at=(x, 1.05, 0.0), mat=P["driftwood_dark"], segs=4, yaw=math.pi / 4, bev=0)
+    for y, mat in ((0.42, P["driftwood"]), (0.82, P["timber_light"])):
+        m.plank(2.42, 0.12, 0.04, at=(0.0, y, 0.075), mat=mat, warp=0.04)
+    m.tube([(0.55, 0.43, 0.1), (0.62, 0.52, 0.1), (0.7, 0.43, 0.1)], 0.01, mat=P["rope"], segs=4)
+    m.build("PROP_decor_fence", loc=place())
+
+
+def decor_bench():
+    """A plank bench with a backrest, its legs set on flat stones."""
+    m = MB(763)
+    for x in (-0.72, 0.72):
+        m.box((0.24, 0.06, 0.48), at=(x, 0.0, 0.0), mat=P["stone_dark"], bev=0.02)
+        m.box((0.08, 0.42, 0.08), at=(x, 0.06, 0.16), mat=P["timber"], bev=0.01)
+        m.box((0.08, 0.9, 0.08), at=(x, 0.06, -0.18), mat=P["timber"], pitch=-0.12, bev=0.01)
+        m.box((0.08, 0.06, 0.44), at=(x, 0.4, -0.01), mat=P["timber"], bev=0.01)
+    for k in range(3):
+        m.plank(1.75, 0.13, 0.04, at=(0.0, 0.46, -0.14 + k * 0.145), mat=P["timber_light"], warp=0.02)
+    for y in (0.72, 0.88):
+        m.plank(1.75, 0.11, 0.035, at=(0.0, y, -0.25 - (y - 0.72) * 0.12), mat=P["timber_light"], pitch=-0.12, warp=0.02)
+    m.build("PROP_decor_bench", loc=place())
+
+
+def decor_planter():
+    """A box planter of herbs: thyme, sea kale and a few marigolds."""
+    m = MB(764)
+    rnd = random.Random(764)
+    m.box((1.18, 0.42, 0.58), mat=P["timber"], bev=0.02)
+    for y in (0.08, 0.26):
+        for side in (-1, 1):
+            m.box((1.2, 0.12, 0.02), at=(0, y, side * 0.295), mat=P["timber_light"], bev=0.004, tint=0.9 + 0.1 * rnd.random())
+    m.box((1.08, 0.04, 0.48), at=(0, 0.4, 0), mat=Paint(P["sand"].mat, 0x4A3A2A), bev=0)
+    for k in range(14):
+        x, z = -0.45 + (k % 7) * 0.15 + (rnd.random() - 0.5) * 0.05, -0.12 + (k // 7) * 0.24
+        m.sphere(0.08 + rnd.random() * 0.04, at=(x, 0.48, z), mat=Paint(P["moss"].mat, rnd.choice((0x4E6B3A, 0x5C7A44, 0x7A8A5A))), scale=(1.0, 0.75, 1.0), subdiv=1)
+        if k % 3 == 0:
+            m.sphere(0.03, at=(x + 0.03, 0.56, z), mat=Paint(P["paint_yellow"].mat, 0xE39A2A), subdiv=0)
+    m.build("PROP_decor_planter", loc=place())
+
+
+def decor_barrels():
+    """Two barrels and a small cask stood on one of them."""
+    m = MB(765)
+    prof = [(0.3, 0.0), (0.335, 0.12), (0.36, 0.3), (0.365, 0.45), (0.36, 0.6), (0.335, 0.78), (0.3, 0.9)]
+    for x, z, sc in ((-0.3, 0.05, 1.0), (0.36, -0.12, 0.92)):
+        m.lathe([(r * sc, y * sc) for r, y in prof], at=(x, 0, z), mat=P["timber"], segs=14, staves=0.12)
+        for y in (0.1, 0.33, 0.57, 0.8):
+            r = (0.3 + 0.065 * math.sin(math.pi * y / 0.9) + 0.012) * sc
+            m.ring(r, 0.016, at=(x, y * sc, z), mat=P["iron"], segs=16, tube_segs=4)
+    small = [(0.17, 0.0), (0.19, 0.12), (0.2, 0.22), (0.19, 0.32), (0.17, 0.42)]
+    m.lathe(small, at=(-0.3, 0.9, 0.05), mat=P["timber_light"], segs=12, staves=0.12)
+    for y in (0.06, 0.36):
+        m.ring(0.19, 0.012, at=(-0.3, 0.9 + y, 0.05), mat=P["iron"], segs=12, tube_segs=4)
+    m.build("PROP_decor_barrels", loc=place())
+
+
+def decor_crates():
+    """Two crates stacked and a smaller one beside them, a coil of rope on top."""
+    m = MB(766)
+    slatted_crate(m, (0.72, 0.6, 0.72), at=(-0.18, 0, 0.05), yaw=0.08)
+    slatted_crate(m, (0.62, 0.5, 0.62), at=(-0.15, 0.6, 0.02), yaw=-0.25, wood=P["timber_pale"])
+    slatted_crate(m, (0.46, 0.4, 0.46), at=(0.4, 0, -0.2), yaw=0.5, wood=P["driftwood"])
+    pts = [(-0.15 + math.cos(t * 3.3 * TAU) * (0.06 + t * 0.14), 1.12 + t * 0.03, 0.02 + math.sin(t * 3.3 * TAU) * (0.06 + t * 0.14)) for t in (k / 40 for k in range(41))]
+    m.tube(pts, 0.022, mat=P["rope"], segs=4)
+    m.build("PROP_decor_crates", loc=place())
+
+
+def decor_bunting():
+    """A tall pole with a crosstree, a pennant at the top and bunting strung from each arm."""
+    m = MB(767)
+    rnd = random.Random(767)
+    m.cyl(0.07, 0.05, 3.3, mat=P["driftwood"], segs=8)
+    m.box((1.2, 0.07, 0.07), at=(0, 2.85, 0), mat=P["driftwood_dark"], centered=True, bev=0.01)
+    m.rock(0.2, at=(0.12, 0.0, 0.1), mat=P["rock"], seed=768, squash=0.6)
+    m.rock(0.16, at=(-0.12, 0.0, -0.1), mat=P["rock_dark"], seed=769, squash=0.6)
+    flags = [Paint(P["cloth"].mat, c) for c in (0xB24A3A, 0xE6E1D3, 0xD9C27A, 0x4F6E8A, 0x5C7A44)]
+    for side in (-1, 1):
+        a, b = (side * 0.58, 2.83, 0.0), (side * 0.12, 1.55, 0.0)
+        pts = [(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t - 0.35 * math.sin(math.pi * t), 0.0) for t in (k / 10 for k in range(11))]
+        m.tube(pts, 0.006, mat=P["rope"], segs=3, cap=False)
+        for k in range(1, 10):
+            x, y, z = pts[k]
+            m.prism([(-0.06, 0.0), (0.06, 0.0), (0.0, -0.14)], 0.006, at=(x, y, z + (rnd.random() - 0.5) * 0.01), mat=flags[(k + side) % len(flags)], yaw=(rnd.random() - 0.5) * 0.4, bev=0, tint=0.85 + 0.2 * rnd.random())
+    m.prism([(0.0, 0.0), (0.0, 0.32), (0.55, 0.16)], 0.008, at=(0.04, 3.0, 0.0), mat=flags[0], bev=0)
+    m.build("PROP_decor_bunting", loc=place())
+
+
+def decor_net_rack():
+    """A small net rack, 2.2 m: two posts and a pole, a net hung over it with cork floats."""
+    m = MB(770)
+    W, H = 2.1, 1.75
+    for sx in (-1, 1):
+        m.box((0.1, H + 0.05, 0.1), at=(sx * W / 2, 0.0, 0), mat=P["driftwood_dark"], bev=0.015)
+    m.cyl(0.05, 0.05, W + 0.3, at=(0, H, 0), mat=P["driftwood"], roll=ACROSS, centered=True, segs=8)
+    netcol = Paint(P["cloth"].mat, 0x5A6150)
+    NI, NJ = 11, 6
+    for side in (-1, 1):
+        rows = []
+        for j in range(NJ):
+            t = j / (NJ - 1)
+            rows.append([(-W / 2 + 0.08 + (W - 0.16) * i / (NI - 1), H - 0.05 - t * (H - 0.4) - 0.08 * math.sin(i / (NI - 1) * math.pi) * t, side * (0.06 + t * 0.2) + 0.05 * math.sin(i * 1.9 + side) * t) for i in range(NI)])
+        for row in rows:
+            m.tube(row, 0.01, mat=netcol, segs=3)
+        for i in range(NI):
+            m.tube([row[i] for row in rows], 0.01, mat=netcol, segs=3)
+        for i in range(0, NI, 3):
+            px, py, pz = rows[-1][i]
+            m.sphere(0.05, at=(px, py - 0.03, pz), mat=Paint(P["cloth"].mat, 0xB08A55), scale=(1.0, 0.8, 1.0), subdiv=1)
+    m.tube([(-W / 2 + 0.05 + (W - 0.1) * k / 8, H + 0.02, 0.0) for k in range(9)], 0.07, mat=netcol, segs=6)
+    m.build("PROP_decor_net_rack", loc=place())
+
+
+
+for build in (driftwood, scrap_pile, kelp_bed, reinforced_wreckage, supply_crate, strongbox, lens_pedestal,
               tide_pole, buoy_crate, rope_ladder, beacon_lamp, rowboat, signpost, barrel, hull_ribs, lantern_post, dune_grass,
-              bollard, rope_coil, anchor, plank_pile, lantern_hanging, seaweed, lobster_pot, cask_small, gull):
+              bollard, rope_coil, anchor, plank_pile, lantern_hanging, seaweed, lobster_pot, cask_small, gull,
+              flot_planks, flot_drum, flot_kelp, flot_bottles, flot_barrel, flot_log, flot_crate, wreck_boat, wreck_pilings, wreck_boiler,
+              plot_board, decor_brazier, decor_fence, decor_bench, decor_planter, decor_barrels, decor_crates, decor_bunting, decor_net_rack):
     build()
 
 kit.save_and_export("art/blender/props/props.blend", "public/assets/models/props.glb")

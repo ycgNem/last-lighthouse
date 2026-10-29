@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { deserialize, SaveSystem, serialize, type KeyValueStore } from "../src/core/Save";
+import type { ItemId } from "../src/data/ids";
+import { PROJECTS, STAGES, type Requirements } from "../src/data/lighthouse";
 import { getRecipe } from "../src/data/recipes";
-import { createNewGame } from "../src/state/GameState";
+import { createNewGame, type GameState } from "../src/state/GameState";
+import { completeProject } from "../src/systems/building";
 import { craft, craftBlock } from "../src/systems/crafting";
 import { addItem, applyDeathLoss, available, carried, depositAll, satchelCapacity, stored } from "../src/systems/inventory";
-import { advanceStage, completeProject, revealedLocations } from "../src/systems/progression";
+import { advanceStage, revealedLocations } from "../src/systems/progression";
 import { advanceQuest, currentStep, stepMaterials } from "../src/systems/quests";
 import { addXp, levelForXp } from "../src/systems/skills";
 
@@ -58,6 +61,11 @@ describe("skills", () => {
   });
 });
 
+/** Puts what a requirement asks for in the chest. */
+function fund(s: GameState, req: Requirements): void {
+  for (const st of req.items ?? []) s.storage[st.item] = (s.storage[st.item] ?? 0) + st.qty;
+}
+
 describe("crafting and progression", () => {
   it("forge recipes need the forge project", () => {
     const s = createNewGame();
@@ -86,23 +94,25 @@ describe("crafting and progression", () => {
 
   it("the main quest walks from new game to Stage 2 with the right inputs", () => {
     const s = createNewGame();
-    const give = (item: Parameters<typeof addItem>[1], qty: number) => (s.storage[item] = (s.storage[item] ?? 0) + qty);
+    const give = (item: ItemId, qty: number) => (s.storage[item] = (s.storage[item] ?? 0) + qty);
 
     s.quest.talked.push("maren");
+    s.salvaged = 6;
     give("silverfin", 3);
     for (let i = 0; i < 3; i++) craft(s, getRecipe("grilled_silverfin")!);
-    give("scrap", 8 + 10);
-    give("timber", 6 + 12 + 6);
-    give("kelp", 4);
-    give("sea_glass", 6);
-    expect(completeProject(s, "forge")).toBe(true);
-    expect(completeProject(s, "dock")).toBe(true);
+    for (const p of ["forge", "jetty"] as const) {
+      fund(s, PROJECTS[p].requires);
+      expect(completeProject(s, p)).toBe(true);
+    }
+    fund(s, STAGES[1]!.requires);
+    expect(advanceStage(s, "home")).toBeUndefined(); // the Marsh place is still open to the sky
+    fund(s, PROJECTS.cottage_1.requires);
+    expect(completeProject(s, "cottage_1")).toBe(true);
     expect(advanceStage(s, "home")?.name).toBe("Restored Lamp");
     expect(revealedLocations(s)).toContain("wreck");
 
     addItem(s, "drowned_lens", 1);
-    give("brass", 8);
-    give("tidestone", 5);
+    fund(s, STAGES[2]!.requires);
     expect(advanceStage(s, "beacon")).toBeUndefined(); // wrong place
     expect(advanceStage(s, "home")?.name).toBe("Focused Lens");
     expect(s.keyItems).toEqual(["lighthouse_ember"]);
@@ -119,6 +129,10 @@ describe("crafting and progression", () => {
   it("the objective checklist counts only what's still needed", () => {
     const s = createNewGame();
     s.quest.talked.push("maren");
+    advanceQuest(s);
+    expect(currentStep(s)?.id).toBe("salvage");
+    s.salvaged = 6;
+    s.projects.push("forge", "jetty", "cottage_1");
     advanceQuest(s);
     expect(currentStep(s)?.id).toBe("feed");
     expect(stepMaterials(s)).toEqual([{ item: "silverfin", qty: 3 }]);
@@ -147,6 +161,31 @@ describe("save", () => {
     const raw = JSON.parse(serialize(s)) as Record<string, unknown>;
     delete raw.settings;
     expect(deserialize(JSON.stringify(raw)).settings.fov).toBe(75);
+  });
+
+  /** A version 1 save, as the game wrote it before the Rest became the base. */
+  const v1 = (fields: Record<string, unknown>) => {
+    const raw = JSON.parse(serialize(createNewGame())) as Record<string, unknown>;
+    for (const k of ["build", "decor", "salvaged", "cove", "leftHomeAt"]) delete raw[k];
+    return JSON.stringify({ ...raw, version: 1, gear: ["boltcaster_mk1", "rod_basic"], ...fields });
+  };
+
+  it("brings a version 1 save across: no more shore, the dock is the jetty, and a hook for everyone", () => {
+    const s = deserialize(v1({ location: "shore", projects: ["forge", "dock"], quest: { step: 4, crafted: { grilled_silverfin: 3 }, talked: ["maren"] } }));
+    expect(s.version).toBe(2);
+    expect(s.location).toBe("home");
+    expect(s.projects).toEqual(["forge", "jetty"]);
+    expect(s.gear).toContain("hook_rope");
+    expect(s.cove.beach).toEqual([]);
+    expect(s.decor).toEqual([]);
+    // Walked past what's done to the first step that isn't: the Marsh cottage.
+    expect(currentStep(s)?.id).toBe("cottage");
+  });
+
+  it("keeps Odile for a version 1 save past the lamp, and its place in the story", () => {
+    const s = deserialize(v1({ stage: 1, projects: ["forge", "dock"], quest: { step: 5, crafted: { grilled_silverfin: 3 }, talked: ["maren"] } }));
+    expect(s.projects).toEqual(["forge", "jetty", "cottage_1"]);
+    expect(currentStep(s)?.id).toBe("lens");
   });
 
   it("reset clears the save", () => {

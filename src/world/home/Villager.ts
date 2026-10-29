@@ -109,14 +109,16 @@ export class Villager {
   private headPitch = 0;
   private bodyYaw: number;
 
-  static async load(look: VillagerLook): Promise<Villager | null> {
+  /** `yaw`: which way they face at rest (0 faces +Z), from their marker in the map. */
+  static async load(look: VillagerLook, yaw: number): Promise<Villager | null> {
     const scene = await fetchModel(look.asset);
-    return scene ? new Villager(scene, look) : null;
+    return scene ? new Villager(scene, look, yaw) : null;
   }
 
   private constructor(
     scene: THREE.Group,
-    private readonly look: VillagerLook,
+    look: VillagerLook,
+    private readonly restYaw: number,
   ) {
     this.object = scene;
     for (const side of look.hide ?? []) {
@@ -139,8 +141,8 @@ export class Villager {
       m.computeBoundingSphere();
       if (m.boundingSphere) m.boundingSphere.radius += 0.3;
     });
-    this.bodyYaw = look.yaw;
-    scene.rotation.y = look.yaw;
+    this.bodyYaw = restYaw;
+    scene.rotation.y = restYaw;
   }
 
   private pose(carry: string | null, carryPose: CarryPose | null): void {
@@ -205,7 +207,7 @@ export class Villager {
     const t = time + this.t0;
     let lookYaw = 0;
     let lookPitch = 0;
-    let faceYaw = this.look.yaw;
+    let faceYaw = this.restYaw;
     if (viewer) {
       const dx = viewer.x - this.object.position.x;
       const dz = viewer.z - this.object.position.z;

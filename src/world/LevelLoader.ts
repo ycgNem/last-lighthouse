@@ -10,8 +10,15 @@ import { patchTideMaterial } from "./TideMaterial";
 // Turns a Blender-exported location (.glb) into a Level by reading the object
 // naming conventions in docs/ART_PIPELINE.md.
 
-/** Markers and anything the game moves, hides or lets you use: never merged into the static batch. */
-const LIVE = /^(NODE_|BUOY_|STATE_|INT_|TRIG_|COL_|ENEMY_|SPAWN_|ANCHOR_|FX_|GLOOM_)/;
+/**
+ * Markers and anything the game moves, hides or lets you use: never merged into
+ * the static batch. Home adds its plots (PLOT_), the places people and the
+ * lighthouse stand (PLACE_, NPC_), decor keep-outs (CLEAR_) and the grass's
+ * positions (SCATTER_).
+ */
+const LIVE = /^(NODE_|BUOY_|STATE_|INT_|TRIG_|COL_|ENEMY_|SPAWN_|ANCHOR_|FX_|GLOOM_|PLOT_|PLACE_|NPC_|CLEAR_|SCATTER_)/;
+/** Stands in for something you use without being drawn (the lighthouse door): still a raycast target. */
+const PROXY = new THREE.MeshBasicMaterial({ visible: false });
 
 const isNode = (v: unknown): v is NodeId => typeof v === "string" && (NODE_IDS as readonly string[]).includes(v);
 const isEnemy = (v: unknown): v is EnemyId => typeof v === "string" && (ENEMY_IDS as readonly string[]).includes(v);
@@ -73,6 +80,10 @@ export class GlbLevel implements Level {
       if (name.startsWith("COL_")) {
         col.push(...meshesUnder(o));
         o.visible = false;
+      } else if (name.startsWith("SCATTER_")) {
+        o.visible = false;
+      } else if (data.proxy) {
+        for (const m of meshesUnder(o)) m.material = PROXY;
       } else if (data.col) {
         col.push(...meshesUnder(o));
       }
@@ -136,16 +147,22 @@ export class GlbLevel implements Level {
    */
   applyFlags(flags: readonly string[]): void {
     if (!this.stateObjects.length) return;
-    const hidden = new Set<THREE.Object3D>();
-    for (const s of this.stateObjects) {
-      s.object.visible = flags.includes(s.flag) === s.on;
-      if (!s.object.visible) hidden.add(s.object);
-    }
-    const shown = (m: THREE.Object3D) => {
-      for (let o: THREE.Object3D | null = m; o; o = o.parent) if (hidden.has(o)) return false;
-      return true;
+    for (const s of this.stateObjects) s.object.visible = flags.includes(s.flag) === s.on;
+    this.rebuildCollider();
+  }
+
+  /**
+   * Collision from every COL_ mesh that's shown, parents and all, less whatever
+   * `skip` turns away, plus `extra` meshes: people, placed decor. A COL_ object
+   * is always hidden and a batched mesh is drawn by the batch, so neither counts
+   * as hidden.
+   */
+  rebuildCollider(extra: readonly THREE.Mesh[] = [], skip?: (m: THREE.Mesh) => boolean): void {
+    const shown = (m: THREE.Mesh) => {
+      for (let o: THREE.Object3D | null = m; o; o = o.parent) if (!o.visible && !o.name.startsWith("COL_") && !o.userData.batched) return false;
+      return !skip?.(m);
     };
-    this.collider = new StaticCollider(this.colMeshes.filter(shown));
+    this.collider = new StaticCollider([...this.colMeshes.filter(shown), ...extra]);
   }
 
   /** A named SPAWN_ point, falling back to the landing. */

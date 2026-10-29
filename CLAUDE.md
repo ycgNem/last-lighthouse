@@ -43,8 +43,9 @@ workflow runs the tests and the build first). Asset URLs must go through
   ≥ 0.4 s (the validator checks the last one).
 - No backend, multiplayer, currencies, hunger, durability or fuel chores.
 - Level layout comes from Blender markers (`SPAWN_`, `NODE_`, `COL_`…), not
-  hard-coded positions. The exception is home (`src/world/home/HomeLevel.ts`),
-  built in code because progression changes so much of it.
+  hard-coded positions. Home too: its map is `tools/blender/build/home_map.py`
+  (`PLOT_`, `NPC_`, `PLACE_`, `FX_drift_`…), and `src/world/home/HomeLevel.ts`
+  only layers progression over it (plots rising, who's home, the boats).
 - Use Blender headless only (`blender -b`, what `npm run build:art` does). Never
   drive a live Blender window: the user may have one open for another project.
 - After changing a level script, `npm test` checks its markers and its node/enemy
@@ -55,9 +56,13 @@ workflow runs the tests and the build first). Asset URLs must go through
 ## Dev helpers
 
 In the dev build: **T** skips the tide forward 60 s. Console (`__ll`): `give("timber", 20)`,
-`gear("rod_reinforced")`, `xp("combat", 500)`, `stage(1)`, `flag("guardian_defeated")`,
-`project("dock")`, `tide(120)`, `go("wreck")`, `tp(x, y, z)`, `where()`, `heal()`,
-`killAll()`, `reset()`, `economy()` (prints the pacing simulation's trips). `__ll.game` is the live `Game`.
+`gear("hook_iron")`, `xp("combat", 500)`, `stage(1)`, `flag("guardian_defeated")`,
+`build("forge")` (tops up what a plot needs and hands it in, so it rises and stands),
+`project("jetty")` (marks it built without the ceremony), `flotsam("log")` (a piece of
+drift partway in through the cove mouth), `tide(120)`, `go("wreck")`, `tp(x, y, z)`,
+`where()`, `heal()`, `killAll()`, `reset()`, `economy()` (prints the pacing simulation's
+trips). `__ll.game` is the live `Game`. At home, RMB (or LMB) throws the hook and B is
+build mode (LMB place, RMB pick up, R turn, wheel or 1–9 choose).
 
 The Claude app's browser pane doesn't fire animation frames while hidden. To test
 there, drive the loop yourself: call `__ll.game.update(1 / 60)` in a loop, then

@@ -1,8 +1,9 @@
 import type { ItemStack } from "../data/ids";
-import { PROJECTS, STAGES } from "../data/lighthouse";
+import { STAGES } from "../data/lighthouse";
 import { MAIN_QUEST, type QuestStep } from "../data/quests";
 import { getRecipe } from "../data/recipes";
 import type { GameState } from "../state/GameState";
+import { remaining } from "./building";
 
 export function currentStep(state: GameState): QuestStep | undefined {
   return MAIN_QUEST[state.quest.step];
@@ -13,6 +14,8 @@ export function isStepDone(state: GameState, step: QuestStep): boolean {
   switch (g.kind) {
     case "talk":
       return state.quest.talked.includes(g.npc);
+    case "salvage":
+      return state.salvaged >= g.qty;
     case "craft":
       return (state.quest.crafted[g.recipe] ?? 0) >= g.qty;
     case "project":
@@ -42,7 +45,8 @@ export function stepMaterials(state: GameState): ItemStack[] {
   const step = currentStep(state);
   if (!step) return [];
   const g = step.goal;
-  if (g.kind === "project") return PROJECTS[g.project].requires.items ?? [];
+  // What's still to hand in: a plot keeps what you've given it.
+  if (g.kind === "project") return remaining(state, g.project);
   if (g.kind === "stage") return STAGES[g.stage]?.requires.items ?? [];
   if (g.kind === "craft") {
     // Only what's still needed: two meals cooked of three leaves one meal's worth.

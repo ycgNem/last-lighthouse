@@ -4,7 +4,7 @@ Python because Blender's scripting API is Python-only; everything else in the
 project is TypeScript.
 
 Usage (headless):
-    blender -b art/blender/locations/shore.blend --python tools/blender/export_gltf.py -- public/assets/models/locations/shore.glb
+    blender -b art/blender/locations/wreck.blend --python tools/blender/export_gltf.py -- public/assets/models/locations/wreck.glb
 
 Rules (see docs/ART_PIPELINE.md): objects starting with "_" and anything in a
 collection named "_ignore" are skipped; modifiers are applied; +Y up; custom

@@ -21,9 +21,10 @@ export const TIDE: TideConfig = {
   warning: 60,
   lowLevel: 0,
   highLevel: 1.8,
-  // 1:00 into low tide: the first warning comes after two minutes of play,
-  // about one minute into the first trip to the shore (GDD §12).
-  newGameOffset: 60,
+  // High water just in: the cove is full of drift for the first lesson with
+  // the hook, and the ebb bares the wreck field about the time the forge goes
+  // up (GDD §12).
+  newGameOffset: 270,
 };
 
 /** Depth thresholds (water surface minus feet height), metres. */

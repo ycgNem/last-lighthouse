@@ -267,6 +267,53 @@ b {
   box-shadow: 0 0 6px rgba(255, 179, 71, 0.9);
   opacity: 0.85;
 }
+/* The salvage hook's reticle: a ring round the dot. Amber on something it can
+   take, dashed when it's out of reach, red when it can't, turning while it reels. */
+.crosshair::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 26px;
+  height: 26px;
+  margin: -13px 0 0 -13px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  opacity: 0;
+  transform: scale(0.6);
+  transition:
+    transform 120ms ease,
+    opacity 120ms ease,
+    border-color 120ms ease;
+}
+.crosshair.hook::after {
+  border-color: var(--amber);
+  opacity: 0.95;
+  transform: scale(1);
+}
+.crosshair.far::after {
+  border-color: rgba(255, 241, 201, 0.4);
+  border-style: dashed;
+  opacity: 0.8;
+  transform: scale(1.15);
+}
+.crosshair.blocked::after {
+  border-color: #c0503c;
+  opacity: 0.85;
+  transform: scale(0.9);
+}
+.crosshair.reel::after {
+  border-color: var(--lamp);
+  border-style: dotted;
+  opacity: 0.9;
+  transform: scale(0.8);
+  animation: reel-turn 0.9s linear infinite;
+}
+@keyframes reel-turn {
+  to {
+    transform: scale(0.8) rotate(360deg);
+  }
+}
 .prompt {
   position: absolute;
   left: 50%;
@@ -578,6 +625,67 @@ b {
 }
 .compass .mk.edge {
   opacity: 0.6;
+}
+
+/* Build mode's hotbar, over the food slot. */
+.hotbar {
+  position: absolute;
+  left: 50%;
+  bottom: 64px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  /* Its own width, not what's left of the screen right of centre. */
+  width: max-content;
+  max-width: calc(100vw - 32px);
+}
+.hotbar .slots {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.hotbar .slot {
+  box-sizing: border-box;
+  width: 80px;
+  padding: 5px 6px 6px;
+  background: var(--panel);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1.25;
+  color: var(--lamp);
+}
+.hotbar .slot b {
+  display: block;
+  font-size: 10px;
+  color: var(--ink-dim);
+}
+.hotbar .slot small {
+  display: block;
+  margin-top: 3px;
+  font-size: 10px;
+  color: var(--ink-dim);
+}
+.hotbar .slot.sel {
+  border-color: var(--amber);
+  box-shadow: 0 0 0 1px var(--amber);
+}
+.hotbar .slot.poor span,
+.hotbar .slot.poor small {
+  opacity: 0.5;
+}
+.hotbar-keys {
+  padding: 4px 10px;
+  background: var(--panel);
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--ink-dim);
+}
+.hotbar-keys b {
+  color: var(--lamp);
 }
 
 /* Food slot and satchel. */
