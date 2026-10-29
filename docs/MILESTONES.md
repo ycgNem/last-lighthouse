@@ -9,10 +9,12 @@ Blender work · `(T)` has an automated test
 
 **Where things stand (2026-10-28):** Chapter 1 is playable start to finish: home,
 the shore, the wreck by either tide route, the beacon and the Guardian, the
-relight and the chapter card. M1–M5 are done apart from the items marked below;
-M6 is about a third done; M7 hasn't started. What's left is mostly feel and
-presentation: hand-playing every encounter at speed, cinematic upgrade beats,
-water, rain, bloom, the Lantern Flare and accessibility.
+relight and the chapter card. M1–M6 are done apart from the items marked below.
+M7's automated checks are in: the tide-trap sweep, the pacing simulation and the
+draw-call budget. What's left is people: three fresh playthroughs to confirm the
+pacing, hand-playing every encounter at speed, plus the cinematic upgrade beats,
+the chart's fog burning back, a beacon landing on the home chart and the debug
+overlay.
 
 ---
 
@@ -146,26 +148,41 @@ completion saves and survives reload.
 
 ## M6 — Presentation, audio, quality of life
 
-- [ ] Water shader pass: depth colour, shoreline foam, specular glints, Gerstner
-      waves; underwater tint when swimming
-- [ ] Rain (GPU particles, off-camera spawn); fog per location is done
-- [~] Post: damage vignette done; bloom on emissives not yet
+- [x] Water shader pass: depth colour from each level's seabed (baked from its
+      collision at load), shoreline foam, specular glints, Gerstner swells that
+      calm in the shallows, ripples and rain rings; underwater tint and muffled
+      sound when swimming
+- [x] Rain (GPU streaks in a box that travels with the camera, so nothing pops
+      in; roofs keep it off), with a rain bed in the audio; fog per location
+- [x] Post: HDR bloom on emissives and the beam (the hands are drawn after it, so
+      the lantern doesn't flood the screen); damage vignette
 - [x] Audio (synthesised, no files): ambience per location, positional enemy
       cues, tide horn, UI, craft and upgrade sounds. *No music stingers.*
-- [ ] **Lantern Flare** (Q): staggers enemies in a cone, dispels Gloom pockets
+- [x] **Lantern Flare** (Q): staggers enemies in a cone (each its own time, the
+      Guardian immune), dispels Gloom pockets (`GLOOM_` markers: they shroud the
+      loot inside and chill you, never below 15 HP) **(B)**
 - [x] Compass strip: landing, path home, quest objective
-- [ ] Accessibility: rebinding UI, colour-blind-safe projectile outlines, reduced
-      motion, subtitles for NPC lines (dialogue is already text)
+- [x] Accessibility: rebinding UI (keys swap, Esc cancels), high-contrast enemy
+      shots (pale cores, dark rims), reduced motion (follows the OS on a new
+      save), sound captions with direction; NPC lines were already text
 
 ---
 
 ## M7 — Balance and ship check
 
-- [ ] Economy pass with the `npm test` simulation + 3 fresh playthroughs
-- [ ] Performance: draw calls < 300, texture budget, instanced scatter
+- [~] Economy pass: the simulation plays the chapter on expected yields against
+      the tide clock (Stage 1 at 16 min on the second shore run, the whole
+      chapter in about 35 min over four trips of 6–9 min) **(T)**. *The three
+      fresh playthroughs are still to do.*
+- [x] Performance: under 300 draw calls everywhere, every enemy alive (static
+      scenery merged by material at load, rigid models folded to vertex colour,
+      shadows only from what's near; the wreck peaks at 296). No image textures
+      at all, so the texture budget is just the render targets. Scatter is merged
+      rather than instanced, which is what the draw-call budget needed.
 - [ ] Final checklist (from the original brief):
-  - [~] The player cannot become trapped by the tide (rescue current + level
-        design; automated sweep still to do)
+  - [x] The player cannot become trapped by the tide (rescue current, level
+        design, and a sweep of every level at both tides in every progression
+        state; it also proves every node and interactable can be reached) **(T)**
   - [x] Materials and recipes allow progression without a softlock **(T)**
   - [x] Death and saving work consistently **(T)**
   - [x] The first lighthouse upgrade can actually be completed

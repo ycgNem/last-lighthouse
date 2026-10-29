@@ -1,4 +1,5 @@
 import "./menus.css";
+import { effectiveBindings, keyName, REBINDABLE, rebind, type Action } from "../data/controls";
 import type { ItemId, ItemStack, LocationId, ProjectId, SkillId, StationId } from "../data/ids";
 import { LOCATION_IDS, SKILL_IDS } from "../data/ids";
 import { GEAR, ITEMS } from "../data/items";
@@ -28,6 +29,8 @@ export interface MenuHost {
   resetSave(): void;
   closeMenu(): void;
   tideLine(): string;
+  /** Hands the next key or mouse press to `done` (null if the player cancelled with Esc). */
+  captureKey(done: (code: string | null) => void): void;
 }
 
 export type MenuKind =
@@ -55,6 +58,8 @@ export class Menus {
   private readonly panel: HTMLDivElement;
   private current: MenuKind | null = null;
   private confirmStep = 0;
+  /** The action waiting for a new key, while the controls list listens. */
+  private binding: Action | null = null;
 
   constructor(
     parent: HTMLElement,
@@ -88,6 +93,7 @@ export class Menus {
 
   close(): void {
     this.current = null;
+    this.binding = null;
     this.root.classList.add("hidden");
   }
 
@@ -293,9 +299,46 @@ export class Menus {
         <label>Volume <input type="range" min="0" max="1" step="0.05" value="${st.volume}" data-set="volume"><output>${Math.round(st.volume * 100)}%</output></label>
         <label class="check"><input type="checkbox" data-set="screenShake" ${st.screenShake ? "checked" : ""}> Screen shake</label>
         <label class="check"><input type="checkbox" data-set="headBob" ${st.headBob ? "checked" : ""}> Head bob</label>
+        <h3>Look</h3>
+        <label class="check"><input type="checkbox" data-set="bloom" ${st.bloom ? "checked" : ""}> Bloom <small>glow round lamps and bright light</small></label>
+        <label class="check"><input type="checkbox" data-set="rain" ${st.rain ? "checked" : ""}> Rain</label>
+        <h3>Accessibility</h3>
+        <label class="check"><input type="checkbox" data-set="reducedMotion" ${st.reducedMotion ? "checked" : ""}> Reduced motion <small>no shake, bob, sway, dash kick or flashes</small></label>
+        <label class="check"><input type="checkbox" data-set="contrastShots" ${st.contrastShots ? "checked" : ""}> High-contrast enemy shots <small>pale orbs with dark rims, not just colour</small></label>
+        <label class="check"><input type="checkbox" data-set="captions" ${st.captions ? "checked" : ""}> Sound captions <small>horns, windups, chimes and roars, with direction</small></label>
+        <h3>Controls</h3>
+        ${this.controls()}
         <div class="reset">${confirm}</div></div>`;
     }
     return `<h2>Keeper's journal</h2><nav class="tabs">${tabs}</nav>${body}`;
+  }
+
+  private controls(): string {
+    const st = this.host.state.settings;
+    const keys = effectiveBindings(st.bindings);
+    const rows = REBINDABLE.map(({ action, label }) => {
+      const waiting = this.binding === action;
+      const alt = keys[action].slice(1).map(keyName).join(" / ");
+      return `<li><span>${label}${alt ? ` <small>also ${esc(alt)}</small>` : ""}</span>
+        <button data-act="bind" data-action="${action}" class="${waiting ? "listening" : ""}">${waiting ? "Press a key… <small>Esc cancels</small>" : esc(keyName(keys[action][0]!))}</button></li>`;
+    }).join("");
+    const changed = Object.keys(st.bindings).length > 0;
+    return `<ul class="binds">${rows}</ul>${changed ? `<button data-act="unbind">Reset controls</button>` : ""}`;
+  }
+
+  private startBinding(action: Action): void {
+    this.binding = action;
+    this.render();
+    this.host.captureKey((code) => {
+      if (this.binding !== action) return;
+      this.binding = null;
+      if (code) {
+        const st = this.host.state.settings;
+        st.bindings = rebind(st.bindings, action, code);
+        this.host.settingsChanged();
+      }
+      this.render();
+    });
   }
 
   private summary(m: Extract<MenuKind, { kind: "summary" }>): string {
@@ -354,6 +397,13 @@ export class Menus {
       case "reset3":
         this.host.resetSave();
         return;
+      case "bind":
+        this.startBinding(d.action as Action);
+        return;
+      case "unbind":
+        this.host.state.settings.bindings = {};
+        this.host.settingsChanged();
+        break;
     }
     this.render();
   }
@@ -361,7 +411,7 @@ export class Menus {
   private onInput(e: Event): void {
     const input = e.target as HTMLInputElement;
     const key = input.dataset.set as keyof GameState["settings"] | undefined;
-    if (!key) return;
+    if (!key || key === "bindings") return;
     const st = this.host.state.settings;
     if (input.type === "checkbox") (st[key] as boolean) = input.checked;
     else (st[key] as number) = Number(input.value);

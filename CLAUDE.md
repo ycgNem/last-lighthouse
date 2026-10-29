@@ -48,14 +48,16 @@ workflow runs the tests and the build first). Asset URLs must go through
 - Use Blender headless only (`blender -b`, what `npm run build:art` does). Never
   drive a live Blender window: the user may have one open for another project.
 - After changing a level script, `npm test` checks its markers and its node/enemy
-  counts against `src/data/locations.ts`.
+  counts against `src/data/locations.ts`, and sweeps it for tide traps and
+  unreachable nodes (`tests/tide-sweep.test.ts`). After changing yields or costs,
+  `tests/economy.test.ts` checks the chapter's pacing.
 
 ## Dev helpers
 
 In the dev build: **T** skips the tide forward 60 s. Console (`__ll`): `give("timber", 20)`,
 `gear("rod_reinforced")`, `xp("combat", 500)`, `stage(1)`, `flag("guardian_defeated")`,
 `project("dock")`, `tide(120)`, `go("wreck")`, `tp(x, y, z)`, `where()`, `heal()`,
-`killAll()`, `reset()`. `__ll.game` is the live `Game`.
+`killAll()`, `reset()`, `economy()` (prints the pacing simulation's trips). `__ll.game` is the live `Game`.
 
 The Claude app's browser pane doesn't fire animation frames while hidden. To test
 there, drive the loop yourself: call `__ll.game.update(1 / 60)` in a loop, then

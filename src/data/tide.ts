@@ -30,6 +30,8 @@ export const TIDE: TideConfig = {
 export const WATER_DEPTH = {
   wade: 0.5,
   swim: 1.1,
+  /** How far under the surface your feet hang while you swim. */
+  swimFeet: 1.35,
   /** Seconds swimming before the current carries you to an anchor. */
   rescueAfter: 6,
 } as const;

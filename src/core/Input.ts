@@ -1,38 +1,7 @@
+import { effectiveBindings, type Action, type BindingOverrides } from "../data/controls";
 import { clamp } from "./math";
 
-export type Action =
-  | "forward"
-  | "back"
-  | "left"
-  | "right"
-  | "jump"
-  | "dash"
-  | "fire"
-  | "interact"
-  | "eat"
-  | "cycleFood"
-  | "flare"
-  | "journal"
-  | "pause"
-  | "debugTide";
-
-/** `KeyboardEvent.code` values, plus "Mouse0"/"Mouse2" for buttons. */
-export const DEFAULT_BINDINGS: Record<Action, string[]> = {
-  forward: ["KeyW", "ArrowUp"],
-  back: ["KeyS", "ArrowDown"],
-  left: ["KeyA", "ArrowLeft"],
-  right: ["KeyD", "ArrowRight"],
-  jump: ["Space"],
-  dash: ["ShiftLeft", "ShiftRight"],
-  fire: ["Mouse0"],
-  interact: ["KeyE"],
-  eat: ["KeyF"],
-  cycleFood: ["KeyZ"],
-  flare: ["KeyQ"],
-  journal: ["Tab"],
-  pause: ["Escape"],
-  debugTide: ["KeyT"],
-};
+export type { Action } from "../data/controls";
 
 /**
  * "captured": pointer lock, the normal FPS mouse.
@@ -58,16 +27,32 @@ export class Input {
   /** Set by the game while playing. Mouse look and clicks are ignored otherwise. */
   active = false;
   lookMode: LookMode = "captured";
-  bindings: Record<Action, string[]> = structuredClone(DEFAULT_BINDINGS);
+  bindings: Record<Action, string[]> = effectiveBindings({});
+  /** Waiting for a key to bind (the journal's controls list); it gets the next press instead of the game. */
+  private capturing: ((code: string | null) => void) | null = null;
 
   constructor(private readonly target: HTMLElement) {
     window.addEventListener("keydown", (e) => {
       if (e.code === "Tab") e.preventDefault();
+      if (this.capturing) {
+        e.preventDefault();
+        if (!e.repeat) this.finishCapture(e.code === "Escape" ? null : e.code);
+        return;
+      }
       if (!e.repeat) this.press(e.code);
     });
     window.addEventListener("keyup", (e) => this.down.delete(e.code));
     window.addEventListener("mousedown", (e) => {
+      if (this.capturing) {
+        e.preventDefault();
+        this.finishCapture(`Mouse${e.button}`);
+        return;
+      }
       if (this.active) this.press(`Mouse${e.button}`);
+    });
+    // A right-click bound to an action shouldn't open the browser menu over the game.
+    window.addEventListener("contextmenu", (e) => {
+      if (this.active || this.capturing) e.preventDefault();
     });
     window.addEventListener("mouseup", (e) => this.down.delete(`Mouse${e.button}`));
     window.addEventListener("mousemove", (e) => this.onMouseMove(e));
@@ -78,6 +63,28 @@ export class Input {
       this.skipNextMove = true;
     });
     window.addEventListener("blur", () => this.down.clear());
+  }
+
+  /** Applies the player's rebinds on top of the defaults. */
+  setBindings(overrides: BindingOverrides): void {
+    this.bindings = effectiveBindings(overrides);
+  }
+
+  /** Hands the next key or mouse press to `done` (null if the player pressed Esc to cancel). */
+  capture(done: (code: string | null) => void): void {
+    this.capturing = done;
+  }
+
+  get isCapturing(): boolean {
+    return this.capturing !== null;
+  }
+
+  private finishCapture(code: string | null): void {
+    const done = this.capturing;
+    this.capturing = null;
+    // Swallow the release too, so the new key doesn't also act this step.
+    if (code) this.down.delete(code);
+    done?.(code);
   }
 
   get locked(): boolean {

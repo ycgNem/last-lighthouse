@@ -10,8 +10,8 @@ import { join, resolve } from "node:path";
 import { findBlender } from "./blender-path.ts";
 
 const root = resolve(import.meta.dirname, "..");
-// Locations append props from props.blend, so props comes first.
-const ORDER = ["props", "enemies", "viewmodels", "shore", "wreck", "beacon"];
+// Home and the locations append props from props.blend, so props comes first.
+const ORDER = ["props", "enemies", "viewmodels", "home", "shore", "wreck", "beacon"];
 
 const blender = findBlender();
 if (!blender) {

@@ -6,6 +6,7 @@ import type { EnemyId, ItemStack } from "../data/ids";
 import type { HitResult, Hittable } from "../combat/Projectiles";
 import type { GameContext } from "../game/Context";
 import { FX_COLORS } from "../fx/Effects";
+import { collapseMaterials } from "../world/Batch";
 
 // Shared enemy behaviour: state timer, hit flash, telegraph glow, ground
 // following, wall push-out, line of sight, loot and death. Subclasses only
@@ -19,6 +20,7 @@ export interface HitSphere {
 
 const tmpA = new THREE.Vector3();
 const tmpB = new THREE.Vector3();
+const STILL = new THREE.Vector3();
 const white = new THREE.Color(0xffffff);
 
 export abstract class Enemy implements Hittable {
@@ -39,6 +41,8 @@ export abstract class Enemy implements Hittable {
   retreating = false;
   /** Bosses show a health bar. */
   readonly boss: boolean = false;
+  /** Seconds left reeling from a Lantern Flare. */
+  dazzled = 0;
   protected engaged = false;
   private flash = 0;
   private deathT = 0;
@@ -60,6 +64,7 @@ export abstract class Enemy implements Hittable {
     this.root.position.copy(at);
     this.root.rotation.y = Math.random() * Math.PI * 2;
     this.root.add(model);
+    collapseMaterials(model);
     for (const mat of uniqueMaterials(model)) {
       this.mats.push({ mat, emissive: mat.emissive.clone(), intensity: mat.emissiveIntensity });
       if (mat.name.startsWith("GLOW_")) this.glows.push(mat);
@@ -68,6 +73,23 @@ export abstract class Enemy implements Hittable {
 
   get position(): THREE.Vector3 {
     return this.root.position;
+  }
+
+  private shadowMeshes: THREE.Mesh[] | null = null;
+  private shadowOn = true;
+
+  /** Shadow LOD: only creatures near you cast (bosses always do). */
+  castShadows(on: boolean): void {
+    if (this.boss || on === this.shadowOn) return;
+    this.shadowOn = on;
+    if (!this.shadowMeshes) {
+      this.shadowMeshes = [];
+      this.root.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (m.isMesh && m.castShadow) this.shadowMeshes!.push(m);
+      });
+    }
+    for (const m of this.shadowMeshes) m.castShadow = on;
   }
 
   part(name: string): THREE.Object3D | undefined {
@@ -91,9 +113,46 @@ export abstract class Enemy implements Hittable {
     }
     this.stateTime += dt;
     this.cooldown = Math.max(0, this.cooldown - dt);
-    this.think(dt, ctx);
+    if (this.dazzled > 0) {
+      this.dazzled -= dt;
+      this.threat = 0;
+      this.reel(dt, ctx);
+      if (this.dazzled <= 0) this.recoverFromFlare();
+    } else this.think(dt, ctx);
     this.animate(dt, ctx);
     this.applyLook(ctx.time);
+  }
+
+  /**
+   * The Lantern Flare's light: cancels whatever it was winding up and leaves it
+   * reeling for `def.flareStagger` seconds. False if it shrugs the light off.
+   */
+  dazzle(ctx: GameContext): boolean {
+    if (!this.alive || this.def.flareStagger <= 0 || !this.canBeDazzled()) return false;
+    this.dazzled = this.def.flareStagger;
+    this.threat = 0;
+    this.engaged = true;
+    this.setState("dazzled");
+    ctx.effects.sparks(this.center(), 0xffe2a8, 10);
+    return true;
+  }
+
+  /** Whether the light can reach it right now (a Lurker under the water can't be dazzled). */
+  protected canBeDazzled(): boolean {
+    return true;
+  }
+
+  /** What reeling looks like: by default it stops dead and shudders. */
+  protected reel(dt: number, ctx: GameContext): void {
+    this.walk(dt, ctx, STILL, 0, 12);
+    this.model.rotation.z = Math.sin(this.stateTime * 31) * 0.08 * Math.min(1, this.dazzled);
+  }
+
+  protected recoverFromFlare(): void {
+    this.dazzled = 0;
+    this.model.rotation.z = 0;
+    this.cooldown = Math.max(this.cooldown, 0.5);
+    this.setState("chase");
   }
 
   private applyLook(time: number): void {
@@ -227,7 +286,7 @@ export abstract class Enemy implements Hittable {
 
   /** Called by the encounter when the tide sends this enemy away. */
   canLeave(): boolean {
-    return this.state === "idle" || this.state === "chase" || this.state === "wander";
+    return this.state === "idle" || this.state === "chase" || this.state === "wander" || this.state === "dazzled";
   }
 
   leave(ctx: GameContext): void {

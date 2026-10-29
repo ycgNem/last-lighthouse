@@ -30,10 +30,11 @@ Open http://localhost:5173 and click to start.
 | Space | jump |
 | Shift | dash (brief invulnerability) |
 | LMB | fire the bolt-caster (not at home) |
+| Q | Lantern Flare: staggers enemies in front of you, burns away Gloom |
 | E | interact, talk, continue dialogue; hold to gather; press on the splash to land a fish |
 | F | eat the selected food |
 | Z | cycle food |
-| Tab | keeper's journal: satchel, skills, lighthouse, settings |
+| Tab | keeper's journal: satchel, skills, lighthouse, settings (rebind keys, accessibility) |
 | Esc | pause (and release the mouse); closes menus |
 | T | *(dev)* skip the tide forward 60 s |
 
@@ -63,13 +64,23 @@ the mouse normally.
 Defeat isn't the end: the tide carries you home, and you lose 40% of what you
 were carrying (never what's in the chest, never key items).
 
+## Settings and accessibility
+
+In the journal (Tab) → Settings: mouse sensitivity, field of view, volume,
+screen shake, head bob, bloom and rain; **rebind any key** (click it, press the
+new one; Esc cancels, and a key already in use swaps over); **reduced motion** (no
+shake, bob, sway, dash kick or flashes; a new save follows your system setting);
+**high-contrast enemy shots** (pale cores with dark rims, so they don't rely on
+colour); **sound captions** for horns, windups, chimes and roars, with the side
+they came from.
+
 ## Commands
 
 | | |
 |---|---|
 | `npm run dev` | dev server at http://localhost:5173 |
 | `npm run check` | typecheck |
-| `npm test` | unit tests, content validation (softlock check), level marker checks |
+| `npm test` | unit tests, content validation (softlock check), level marker checks, the tide-trap sweep, the pacing simulation |
 | `npm run build` | typecheck + production build |
 | `npm run build:art` | rebuild all Blender art headless (`-- wreck beacon` for some) |
 | `npm run export:models` | export hand-edited `.blend` files to `.glb` |
@@ -90,8 +101,12 @@ GitHub Pages (`.github/workflows/deploy.yml`).
 
 ## Known limitations
 
-- Art is chunky low-poly from build scripts; water is a simple wave plane; no rain,
-  bloom or music yet.
+- Art is stylised low-poly from build scripts, vertex-coloured, with no image
+  textures. There's no music yet.
+- The people at home are [Polyfork](https://polyfork.dev) characters loaded from
+  Polyfork's CDN (their licence doesn't allow copying the files into this repo).
+  Offline you get simple placeholder figures instead.
 - Upgrades swap the world instantly (no camera cinematics yet).
 - Sounds are synthesised in the browser; there are no recorded audio files.
-- The Lantern Flare (Q), key rebinding UI and accessibility options aren't built.
+- Balance is checked by simulation (`tests/economy.test.ts`), not yet by
+  fresh-player playtests.

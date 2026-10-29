@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { softDot } from "./sprite";
 
 // Cheap particles (one Points object) and expanding rings. Colour language:
 // amber = player, sea-green = supernatural/enemy, white-gold = loot, white = water.
@@ -43,7 +44,7 @@ export class Effects {
     this.geo.setAttribute("color", new THREE.BufferAttribute(this.col, 3));
     const points = new THREE.Points(
       this.geo,
-      new THREE.PointsMaterial({ size: 0.13, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }),
+      new THREE.PointsMaterial({ size: 0.16, map: softDot(), vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }),
     );
     points.frustumCulled = false;
     this.group.add(points);
@@ -72,6 +73,34 @@ export class Effects {
       this.base[i * 3 + 2] = this.tmp.b;
       this.maxLife[i] = this.life[i] = opts.life * (0.6 + Math.random() * 0.4);
       this.grav[i] = opts.gravity ?? 9;
+    }
+  }
+
+  /** A spray along `dir`, spread within `halfAngle` radians (the Lantern Flare). */
+  cone(at: THREE.Vector3, dir: THREE.Vector3, halfAngle: number, color: number, count: number, speed: number, life: number): void {
+    this.tmp.setHex(color);
+    const side = Math.abs(dir.y) < 0.95 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+    const u = new THREE.Vector3().crossVectors(dir, side).normalize();
+    const v = new THREE.Vector3().crossVectors(dir, u);
+    const d = new THREE.Vector3();
+    for (let n = 0; n < count; n++) {
+      const i = this.next;
+      this.next = (this.next + 1) % CAP;
+      const a = Math.random() * Math.PI * 2;
+      const r = Math.tan(halfAngle) * Math.sqrt(Math.random());
+      d.copy(dir).addScaledVector(u, Math.cos(a) * r).addScaledVector(v, Math.sin(a) * r).normalize();
+      const sp = speed * (0.5 + Math.random() * 0.5);
+      this.pos[i * 3] = at.x;
+      this.pos[i * 3 + 1] = at.y;
+      this.pos[i * 3 + 2] = at.z;
+      this.vel[i * 3] = d.x * sp;
+      this.vel[i * 3 + 1] = d.y * sp;
+      this.vel[i * 3 + 2] = d.z * sp;
+      this.base[i * 3] = this.tmp.r;
+      this.base[i * 3 + 1] = this.tmp.g;
+      this.base[i * 3 + 2] = this.tmp.b;
+      this.maxLife[i] = this.life[i] = life * (0.6 + Math.random() * 0.4);
+      this.grav[i] = -0.6;
     }
   }
 

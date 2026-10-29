@@ -25,7 +25,6 @@ export type WaterState = "dry" | "wading" | "swimming";
 
 const P = BALANCE.player;
 export const BODY_HEIGHT = 1.8;
-const SWIM_FEET_BELOW_SURFACE = 1.35;
 /** Radians per second with the cursor at the very edge (free-look fallback only). */
 const EDGE_TURN_RATE = 2.2;
 /** Jump still works this long after walking off an edge. */
@@ -139,7 +138,7 @@ export class PlayerController {
     // Vertical.
     this.sinceGround = this.onGround ? 0 : this.sinceGround + dt;
     if (this.water === "swimming") {
-      const targetY = env.waterY - SWIM_FEET_BELOW_SURFACE;
+      const targetY = env.waterY - WATER_DEPTH.swimFeet;
       this.velocity.y = damp(this.velocity.y, (targetY - this.position.y) * 3, 6, dt);
       this.swimTime += dt;
     } else {

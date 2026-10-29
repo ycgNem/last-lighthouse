@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import type { Assets } from "../core/Assets";
 import { damp } from "../core/math";
+import { collapseMaterials } from "../world/Batch";
 import type { GearId } from "../data/ids";
 
 // First-person hands: bolt-caster on the right, the keeper's lantern on the
@@ -36,6 +37,8 @@ export class Viewmodel {
   private lower = 0;
   private bob = 0;
   private fishing = 0;
+  /** 1 at the moment of a Lantern Flare: the lantern thrusts forward and blazes. */
+  private flareKick = 0;
 
   constructor(assets: Assets) {
     this.scene.add(new THREE.HemisphereLight(0xbfd0d8, 0x2a2420, 1.4));
@@ -59,6 +62,7 @@ export class Viewmodel {
     }
     this.lantern = assets.clone("viewmodels.glb", "VM_lantern") ?? new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.16, 8), new THREE.MeshBasicMaterial({ color: 0xffd08a }));
     this.scene.add(this.lantern);
+    for (const m of [...this.weapons.values(), ...this.rods.values(), this.lantern]) collapseMaterials(m);
     this.scene.traverse((o) => {
       const m = o as THREE.Mesh;
       if (m.isMesh) m.frustumCulled = false;
@@ -83,6 +87,10 @@ export class Viewmodel {
     this.recoil = Math.min(1.4, this.recoil + 1);
   }
 
+  flare(): void {
+    this.flareKick = 1;
+  }
+
   /** World-space position of the rod tip (for the fishing line). */
   rodTip(camera: THREE.Camera): THREE.Vector3 {
     const tip = this.rod?.getObjectByName("tip");
@@ -91,7 +99,8 @@ export class Viewmodel {
     return local.applyMatrix4(camera.matrixWorld);
   }
 
-  update(dt: number, o: { mouseDX: number; mouseDY: number; speed: number; safe: boolean; fishing: boolean; aspect: number; time: number; lanternFlicker: number }): void {
+  /** `calm`: the reduced-motion setting (no sway or bob, a gentler flare). */
+  update(dt: number, o: { mouseDX: number; mouseDY: number; speed: number; safe: boolean; fishing: boolean; aspect: number; time: number; lanternFlicker: number; calm: boolean }): void {
     this.camera.aspect = o.aspect;
     this.camera.updateProjectionMatrix();
     this.sway.x = damp(this.sway.x, THREE.MathUtils.clamp(-o.mouseDX * 0.0009, -0.06, 0.06), 10, dt);
@@ -99,18 +108,22 @@ export class Viewmodel {
     this.recoil = damp(this.recoil, 0, 14, dt);
     this.lower = damp(this.lower, o.safe || o.fishing ? 1 : 0, 6, dt);
     this.fishing = damp(this.fishing, o.fishing ? 1 : 0, 8, dt);
+    this.flareKick = damp(this.flareKick, 0, 5, dt);
     this.bob += dt * o.speed * 1.9;
-    const bx = Math.sin(this.bob) * 0.008 * Math.min(1, o.speed / 5);
-    const by = Math.abs(Math.cos(this.bob)) * 0.01 * Math.min(1, o.speed / 5);
+    const motion = o.calm ? 0 : 1;
+    if (o.calm) this.sway.set(0, 0);
+    const bx = Math.sin(this.bob) * 0.008 * Math.min(1, o.speed / 5) * motion;
+    const by = Math.abs(Math.cos(this.bob)) * 0.01 * Math.min(1, o.speed / 5) * motion;
 
     const w = this.weapon;
     w.position.copy(WEAPON_POS).add(new THREE.Vector3(this.sway.x + bx, this.sway.y - by - this.lower * 0.32, this.recoil * 0.06));
     w.rotation.set(this.recoil * 0.12 - this.lower * 0.6, this.sway.x * 2, -this.lower * 0.2);
 
-    this.lantern.position.copy(LANTERN_POS).add(new THREE.Vector3(this.sway.x * 0.8 - bx, this.sway.y * 0.8 - by, 0));
-    this.lantern.rotation.set(0, 0, Math.sin(o.time * 1.7) * 0.06 + this.sway.x * 1.5);
+    const fk = this.flareKick * (o.calm ? 0.4 : 1);
+    this.lantern.position.copy(LANTERN_POS).add(new THREE.Vector3(this.sway.x * 0.8 - bx + fk * 0.06, this.sway.y * 0.8 - by + fk * 0.07, -fk * 0.12));
+    this.lantern.rotation.set(-fk * 0.35, 0, Math.sin(o.time * 1.7) * 0.06 * motion + this.sway.x * 1.5);
     this.lanternLight.position.copy(this.lantern.position).add(new THREE.Vector3(0.05, 0.02, 0.1));
-    this.lanternLight.intensity = 1.0 + o.lanternFlicker * 0.3;
+    this.lanternLight.intensity = 1.0 + o.lanternFlicker * 0.3 + this.flareKick * 6;
 
     if (this.rod) {
       this.rod.visible = this.fishing > 0.02;

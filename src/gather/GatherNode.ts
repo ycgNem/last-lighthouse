@@ -8,6 +8,7 @@ import type { GameContext } from "../game/Context";
 import { FX_COLORS } from "../fx/Effects";
 import { satchelCapacity } from "../systems/inventory";
 import { skillLevel } from "../systems/skills";
+import { collapseMaterials } from "../world/Batch";
 import type { NodeMarker } from "../world/Level";
 
 // A gatherable spot in the world: driftwood, scrap, kelp, glass, caches,
@@ -61,6 +62,7 @@ export class GatherNode {
         obj.rotation.y = marker.yaw;
         ctx.scene.add(obj);
       }
+      collapseMaterials(obj);
       this.object = obj;
       this.range = 3.4;
     }
@@ -69,6 +71,23 @@ export class GatherNode {
 
   get available(): boolean {
     return this.usesLeft > 0;
+  }
+
+  private shadowMeshes: THREE.Mesh[] | null = null;
+  private shadowOn = true;
+
+  /** Shadow LOD: props far from you stop casting. */
+  castShadows(on: boolean): void {
+    if (on === this.shadowOn || this.def.kind === "fish") return;
+    this.shadowOn = on;
+    if (!this.shadowMeshes) {
+      this.shadowMeshes = [];
+      this.object.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (m.isMesh && m.castShadow) this.shadowMeshes!.push(m);
+      });
+    }
+    for (const m of this.shadowMeshes) m.castShadow = on;
   }
 
   /** Why it can't be gathered right now, or null. */
@@ -81,6 +100,7 @@ export class GatherNode {
     if (d.requiresGear && !ctx.state.gear.some((g) => g === d.requiresGear || (GEAR[g].slot === GEAR[d.requiresGear!].slot && GEAR[g].tier > GEAR[d.requiresGear!].tier))) {
       return `${d.name}: needs a ${GEAR[d.requiresGear].name}`;
     }
+    if (ctx.shrouded(this.position)) return `${d.name}: shrouded in Gloom. Flare your lantern (${ctx.keyLabel("flare")})`;
     if (ctx.player.water === "swimming") return "Can't do that while swimming";
     if (!d.keyItem && d.yields.length && !this.hasRoom(ctx)) return "Satchel full: head home to unload";
     return null;
@@ -124,6 +144,8 @@ export class GatherNode {
 
   private deplete(immediate: boolean): void {
     this.usesLeft = 0;
+    // A key node's stand stays; the piece tagged `part` (the lens on its pedestal) is what you took.
+    if (this.def.kind === "key") this.object.traverse((o) => (o.visible = o.visible && o.userData.part === undefined));
     if (immediate) {
       this.fade = 0;
       if (this.def.kind !== "key") this.object.visible = false;

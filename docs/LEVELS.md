@@ -15,7 +15,9 @@ Design every surface against these bands:
 
 Every location is a single `.glb` exported from `art/blender/locations/<id>.blend`
 with the object-naming rules in `ART_PIPELINE.md` (`COL_`, `SPAWN_`, `NODE_`,
-`ANCHOR_`, `BUOY_`, `TRIG_`…). The game reads those empties to place gameplay.
+`ANCHOR_`, `BUOY_`, `TRIG_`, `GLOOM_`…). The game reads those empties to place
+gameplay. `tests/tide-sweep.test.ts` proves each level can't trap you: from
+anywhere you can reach, at either tide, there's a way back to the landing.
 
 ---
 
@@ -90,6 +92,8 @@ enemy type, a tide change.
 - **Nodes (respawn per visit):** 6 driftwood, 3 scrap piles, 4 kelp beds (low),
   3 sea-glass beds (low, Salvage 2), 1 Silverfin spot (any tide), 1 Glowgill spot
   (high, Fishing 4).
+- **Gloom:** one pocket over the islet (`GLOOM_islet`, r 3.5), shrouding the
+  sealed cache (the plain crate nearby stays clear).
 - **First tide change:** a new save's tide clock starts 1:00 into low tide, so the
   first warning fires after two minutes of play (about one minute into the first
   Gullwash trip) and the water starts rising a minute later. The tide clock only
@@ -134,6 +138,8 @@ space (x east, z south, y up).
 - **Anchors:** shelf, slope, flats, bow sand. None on the deck — a rescue there
   would skip both routes.
 - Two lanterns burn in the hold; the home beam shows on the northern horizon.
+- **Gloom:** the chart room (`GLOOM_chart_room`, r 3.2) hangs over the lens, and
+  the hold (`GLOOM_hold`, r 3.0) over its wreckage: flare before you loot.
 
 ---
 
@@ -160,6 +166,11 @@ Compact finale. ≈ 100 × 80 m around a rock stack. Built by
   disappears, `STATE_guardian_defeated_on` (braziers) appears.
 - **Relight:** `INT_beacon` with the Ember → Stage 3 → chapter card;
   `STATE_chapter1_complete_on` lights lanterns along the causeway.
+- **Gate:** the arch stands on a coursed stone footing built out from the arena's
+  edge, whose sill carries the floor through to the first causeway stone (the
+  rock drops away steeply under it).
+- **Gloom:** two pockets on the causeway (`GLOOM_causeway_0/1`, r 2.6) between the
+  Spitters' rocks: flare through them, dazzling whoever's spitting.
 - **Anchors:** landing, causeway, arena east, arena north.
 
 ---
@@ -171,3 +182,16 @@ Compact finale. ≈ 100 × 80 m around a rock stack. Built by
 | Shore | 3–4 crabs | 4–7 min | 18–30 |
 | Wreck | ~4 crabs, 3 spitters, 3 wisps, 2 lurkers (high) | 7–10 min | 25–40 + brass |
 | Beacon | 2 spitters, 2 wisps, boss | 5–8 min | boss chest |
+
+What the pacing simulation (`tests/economy.test.ts`) gets for a player who
+gathers everything on the way round, on average rolls:
+
+| Location | Time away | Haul |
+|---|---|---|
+| Shore, low tide | 6–7 min | 16.5 timber, 10.5 scrap, 20 kelp, 9 sea glass, 6 silverfin, 7 tidestone, 6 crab |
+| Wreck | 9 min (first visit) | 13 brass, 18 scrap, 18 tidestone, 14.5 kelp, 10 timber |
+| Beacon | 7 min, with the Guardian | 14 tidestone, 6 brass |
+
+Times are on target. Hauls run about twice the early estimate, mostly kelp and
+timber: scrap is what holds Stage 1 to the second shore run. The surplus goes to
+optional gear and food; trim it if playtests show the beds feel like busywork.

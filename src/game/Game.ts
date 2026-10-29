@@ -7,6 +7,8 @@ import { Input } from "../core/Input";
 import { Loop } from "../core/Loop";
 import { SaveSystem } from "../core/Save";
 import { BALANCE } from "../data/balance";
+import { ACTIONS, effectiveBindings, keyName, type Action } from "../data/controls";
+import { PERF, POST, RAIN } from "../data/presentation";
 import { ENEMIES } from "../data/enemies";
 import { ENEMY_IDS, SKILL_IDS, type EnemyId, type FlagId, type GearId, type ItemId, type LocationId, type NpcId, type ProjectId, type SkillId, type StageIndex } from "../data/ids";
 import { GEAR, ITEMS } from "../data/items";
@@ -18,6 +20,8 @@ import { SKILLS } from "../data/skills";
 import { TIDE } from "../data/tide";
 import { validateData } from "../data/validate";
 import { Effects, FX_COLORS } from "../fx/Effects";
+import { Post } from "../fx/Post";
+import { Rain } from "../fx/Rain";
 import { Loot } from "../fx/Loot";
 import { Fishing } from "../gather/Fishing";
 import { GatherNode } from "../gather/GatherNode";
@@ -30,10 +34,12 @@ import { advanceStage, completeProject, isMet, maxHp, missingFor } from "../syst
 import { advanceQuest, currentStep, stepMaterials } from "../systems/quests";
 import { addXp, skillLevel } from "../systems/skills";
 import { readTide, tideEvents, type TideReading } from "../systems/tide";
-import { Hud, type CompassMarker, type HudView } from "../ui/Hud";
+import { Hud, type CompassMarker, type HudView, type KeyLabels } from "../ui/Hud";
 import { Menus, type MenuKind } from "../ui/Menus";
 import { HomeLevel } from "../world/home/HomeLevel";
 import type { Level, LevelInteract } from "../world/Level";
+import { GloomPocket } from "../world/Gloom";
+import { LevelHeights } from "../world/Heights";
 import { GlbLevel, loadLevel } from "../world/LevelLoader";
 import { BeamRig, DistantLight, stageLook } from "../world/Lighthouse";
 import { Sky } from "../world/Sky";
@@ -77,6 +83,7 @@ interface Transition {
 const FOCUS_RANGE = 10;
 const UP = new THREE.Vector3(0, 1, 0);
 const tmp = new THREE.Vector3();
+const tmp2 = new THREE.Vector2();
 
 const FREE_LOOK_NOTE =
   "This browser won't capture the mouse, so move it to look and hold it near the left or right edge to keep turning. " +
@@ -108,6 +115,7 @@ export class Game implements GameContext {
 
   private readonly menus: Menus;
   private readonly sky: Sky;
+  private readonly post: Post;
   private readonly water = new Water();
   private readonly home = new HomeLevel();
   private readonly loop: Loop;
@@ -120,6 +128,10 @@ export class Game implements GameContext {
   private nodes: GatherNode[] = [];
   private distant: DistantLight | null = null;
   private beacon: BeamRig | null = null;
+  /** The current level's sea floor and rain floor, for the water and rain shaders. */
+  private heights: LevelHeights | null = null;
+  private readonly rain = new Rain();
+  private gloom: GloomPocket[] = [];
 
   private mode: Mode = "loading";
   private everStarted = false;
@@ -148,9 +160,19 @@ export class Game implements GameContext {
   private relight: { t: number } | null = null;
   private lastYaw = 0;
   private lastPitch = 0;
+  /** Lantern Flare charge, 0..1 (1 = ready), and the flash of the last one (1 → 0). */
+  private flareCharge = 1;
+  private flareFlash = 0;
+  /** Seconds spent inside a Gloom pocket, and the smoothed veils for the HUD. */
+  private gloomT = 0;
+  private gloomVeil = 0;
+  private swimVeil = 0;
 
   constructor(container: HTMLElement, hudRoot: HTMLElement) {
-    this.state = this.saves.load() ?? createNewGame();
+    const saved = this.saves.load();
+    this.state = saved ?? createNewGame();
+    // A first game follows the system's reduced-motion preference.
+    if (!saved && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) this.state.settings.reducedMotion = true;
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -158,7 +180,7 @@ export class Game implements GameContext {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.toneMappingExposure = POST.exposure;
     container.appendChild(this.renderer.domElement);
 
     this.camera = new THREE.PerspectiveCamera(this.state.settings.fov, window.innerWidth / window.innerHeight, 0.05, 1200);
@@ -168,7 +190,10 @@ export class Game implements GameContext {
     this.scene.add(this.camera);
 
     this.sky = new Sky(this.scene);
-    this.scene.add(this.water.mesh, this.effects.group, this.loot.group, this.projectiles.group, this.home.root);
+    this.scene.environment = this.sky.environment(this.renderer);
+    this.scene.environmentIntensity = POST.environment;
+    this.post = new Post(this.renderer, this.scene, this.camera);
+    this.scene.add(this.water.mesh, this.rain.mesh, this.effects.group, this.loot.group, this.projectiles.group, this.home.root);
     this.level = this.home;
     this.tide = readTide(this.state.tide.elapsed, TIDE);
 
@@ -189,6 +214,7 @@ export class Game implements GameContext {
         resetSave: () => this.resetSave(),
         closeMenu: () => this.closeMenu(),
         tideLine: () => this.tideLine(),
+        captureKey: (done) => this.input.capture(done),
       },
       () => this.sfx.ui(),
     );
@@ -208,6 +234,7 @@ export class Game implements GameContext {
       this.effects.splash(to, 20);
     };
     this.player.onDash = () => this.sfx.dash();
+    this.sfx.onCaption = (text, at) => this.caption(text, at);
     this.player.onJump = () => this.sfx.jump();
     this.player.onLand = (speed) => {
       if (speed < 7) return;
@@ -216,7 +243,7 @@ export class Game implements GameContext {
     };
     this.player.spawn(this.home.spawn, this.home.spawnYaw);
     this.player.maxHp = this.player.hp = this.maxHpNow();
-    this.sfx.setVolume(this.state.settings.volume);
+    this.applySettings(false);
 
     this.wireEvents();
     this.refreshWorld();
@@ -241,7 +268,11 @@ export class Game implements GameContext {
   /** Loads the shared models, then the saved location, then waits for the first click. */
   private async boot(): Promise<void> {
     await this.assets.preload(SHARED_MODELS);
+    this.home.dress(this.assets);
     this.viewmodel = new Viewmodel(this.assets);
+    this.viewmodel.scene.environment = this.scene.environment;
+    this.viewmodel.scene.environmentIntensity = POST.environment;
+    this.post.setOverlay(this.viewmodel.scene, this.viewmodel.camera);
     this.viewmodel.equip(this.state.gear);
     this.fishing = new Fishing(this);
     await this.enter(this.state.location, "resume");
@@ -337,10 +368,13 @@ export class Game implements GameContext {
     // Cosmetic time (waves, beams, boats, buoys, particles) keeps running behind cards.
     const warn = this.tide.phase === "rising" ? 1 : this.tide.warning && this.tide.nextTurn === "rising" ? 0.7 : 0;
     this.floodWarn = THREE.MathUtils.damp(this.floodWarn, warn, 2, dt);
-    this.level.update({ time: this.time, dt, waterY: this.tide.waterY, floodWarning: this.floodWarn });
+    this.level.update({ time: this.time, dt, waterY: this.tide.waterY, floodWarning: this.floodWarn, viewer: this.player.position });
     this.distant?.rig.update(dt);
     this.beacon?.update(dt);
     this.effects.update(dt);
+    const vh = this.renderer.getDrawingBufferSize(tmp2).y;
+    for (const g of this.gloom) g.update(dt, this.time, vh);
+    this.flareFlash = Math.max(0, this.flareFlash - dt / BALANCE.flare.flash);
     this.input.endStep();
   }
 
@@ -372,10 +406,13 @@ export class Game implements GameContext {
     this.projectiles.update(dt, this);
     this.loot.update(dt, this);
     for (const n of this.nodes) n.update(dt, this);
+    this.shadowLod();
     this.updateTriggers();
     this.updateInteraction(dt);
     if (this.mode !== "playing") return;
     this.updateCombat(dt);
+    this.updateFlare(dt);
+    this.updateGloom(dt);
     this.updateFood(dt);
     this.updateRelight(dt);
 
@@ -647,6 +684,104 @@ export class Game implements GameContext {
     this.sfx.fire();
   }
 
+  /** Only creatures and loot near you cast shadows (PERF.shadowNear). */
+  private shadowLod(): void {
+    const p = this.player.position;
+    const near = PERF.shadowNear * PERF.shadowNear;
+    for (const e of this.encounters.enemies) e.castShadows(e.position.distanceToSquared(p) < near);
+    for (const n of this.nodes) n.castShadows(n.position.distanceToSquared(p) < near);
+  }
+
+  /** Q: the Keeper's Lantern flares. Enemies in the cone reel; Gloom pockets in reach burn away. */
+  private updateFlare(dt: number): void {
+    const f = BALANCE.flare;
+    if (this.flareCharge < 1) {
+      this.flareCharge = Math.min(1, this.flareCharge + dt / f.cooldown);
+      if (this.flareCharge >= 1) this.sfx.flareReady();
+    }
+    if (!this.input.pressed("flare") || this.hud.dialogueOpen || this.fishing?.active || this.relight) return;
+    if (this.flareCharge < 1) {
+      this.sfx.denied();
+      return;
+    }
+    this.flareCharge = 0;
+    this.flareFlash = 1;
+    const eye = this.player.eye;
+    const dir = this.player.aim();
+    const half = THREE.MathUtils.degToRad(f.coneDeg);
+    this.sfx.flare();
+    this.viewmodel?.flare();
+    const from = eye.clone().addScaledVector(dir, 1.4);
+    this.effects.cone(from, dir, half, FX_COLORS.amber, 110, 18, 0.6);
+    this.effects.cone(from, dir, half * 0.6, FX_COLORS.loot, 40, 24, 0.45);
+
+    let immune = false;
+    for (const e of this.encounters.enemies) {
+      if (!e.alive) continue;
+      const c = e.center();
+      const to = c.clone().sub(eye);
+      const d = to.length();
+      if (d > f.range || (d > 1.5 && to.divideScalar(d).dot(dir) < Math.cos(half))) continue;
+      if (this.level.collider.blocked(eye, c)) continue;
+      if (!e.dazzle(this) && e.boss) immune = true;
+    }
+    if (immune) this.tellOnce("flare:boss", "The Guardian is far too vast to be dazzled.");
+
+    for (const g of this.gloom) {
+      if (!g.active) continue;
+      const to = g.center.clone().setY(g.center.y + 1).sub(eye);
+      const d = to.length();
+      // Close enough to fill with light, or in the cone (widened by the pocket's own size) and in reach.
+      const near = d < g.radius + f.gloomRadius;
+      const seen = d - g.radius < f.range && to.divideScalar(d).dot(dir) > Math.cos(half + Math.atan2(g.radius, d));
+      if (!(near || seen) || !g.dispel()) continue;
+      const at = g.center.clone().setY(g.center.y + 1);
+      this.sfx.gloomBurn(at);
+      this.effects.burst(at, FX_COLORS.amber, 70);
+      this.effects.emit(at, { count: 40, color: FX_COLORS.loot, speed: 3, life: 1.4, gravity: -1.5, up: 2, spread: g.radius * 0.4 });
+      this.tellOnce("gloom:burnt", "The Gloom burns away.");
+    }
+  }
+
+  /** Inside a Gloom pocket the cold slowly wears you down (never below a floor) until a Flare burns it off. */
+  private updateGloom(dt: number): void {
+    let depth = 0;
+    for (const g of this.gloom) depth = Math.max(depth, g.depthAt(this.player.position));
+    this.gloomT = depth > 0.02 ? this.gloomT + dt : 0;
+    const gl = BALANCE.gloom;
+    if (this.gloomT > 0 && this.gloomT <= dt) this.tellOnce("gloom:enter", `The Gloom. It's cold in here. Flare your lantern (${this.keyLabel("flare")}) to burn it away.`);
+    if (this.gloomT > gl.grace && this.player.hp > gl.floorHp) {
+      this.player.hp = Math.max(gl.floorHp, this.player.hp - gl.drainPerSecond * (0.5 + depth) * dt);
+    }
+  }
+
+  /** Is this spot under a Gloom pocket (gathering waits until it's burnt off)? */
+  shrouded(at: THREE.Vector3): boolean {
+    return this.gloom.some((g) => g.covers(at));
+  }
+
+  keyLabel(action: Action): string {
+    return keyName(this.input.bindings[action][0] ?? "?");
+  }
+
+  private tellOnce(key: string, text: string): void {
+    const k = `${this.state.location}:${key}`;
+    if (this.toldOnce.has(k)) return;
+    this.toldOnce.add(k);
+    this.hud.toast(text, "info", 5);
+  }
+
+  /** Captions setting: the sound's text, and which side it came from. */
+  private caption(text: string, at?: THREE.Vector3): void {
+    if (!this.state.settings.captions || this.mode === "loading") return;
+    let side: "left" | "right" | "behind" | null = null;
+    if (at && at.distanceTo(this.player.position) > 2.5) {
+      const a = this.screenAngle(at);
+      side = Math.abs(a) > 2.2 ? "behind" : a < -0.5 ? "left" : a > 0.5 ? "right" : null;
+    }
+    this.hud.caption(text, side);
+  }
+
   private weapon(): GearId {
     let best: GearId = "boltcaster_mk1";
     for (const g of this.state.gear) if (GEAR[g].slot === "weapon" && GEAR[g].tier > GEAR[best].tier) best = g;
@@ -866,6 +1001,9 @@ export class Game implements GameContext {
     this.scene.add(level.root);
     this.flagsKey = "";
     this.refreshWorld();
+    this.heights = new LevelHeights(level.collider);
+    this.water.setHeights(this.heights);
+    this.rain.setHeights(this.heights);
 
     let at = level.spawn;
     let yaw = level.spawnYaw;
@@ -880,6 +1018,9 @@ export class Game implements GameContext {
     this.lastYaw = yaw;
     this.lastPitch = 0;
 
+    this.gloom = level.gloom.map((m) => new GloomPocket(m.position, m.radius));
+    for (const g of this.gloom) this.scene.add(g.root);
+    this.gloomT = 0;
     this.nodes = level.nodes.map((m) => new GatherNode(m.node, m, this));
     this.encounters = new Encounters(level.enemies);
     this.encounters.sync(this);
@@ -933,6 +1074,12 @@ export class Game implements GameContext {
     this.distant = null;
     this.beacon?.pivot.removeFromParent();
     this.beacon = null;
+    this.water.setHeights(null);
+    this.rain.setHeights(null);
+    this.heights?.dispose();
+    this.heights = null;
+    for (const g of this.gloom) g.dispose();
+    this.gloom = [];
   }
 
   // ----------------------------------------------- stations and menus
@@ -1009,9 +1156,17 @@ export class Game implements GameContext {
     this.afterAction();
   }
 
-  private applySettings(): void {
-    this.sfx.setVolume(this.state.settings.volume);
-    this.save();
+  private applySettings(save = true): void {
+    const st = this.state.settings;
+    this.sfx.setVolume(st.volume);
+    this.post.setBloom(st.bloom);
+    this.projectiles.setContrast(st.contrastShots);
+    this.hud.setReducedMotion(st.reducedMotion);
+    this.input.setBindings(st.bindings);
+    const labels = {} as KeyLabels;
+    for (const a of ACTIONS) labels[a] = keyName(effectiveBindings(st.bindings)[a][0]!);
+    this.hud.setKeys(labels);
+    if (save) this.save();
   }
 
   private resetSave(): void {
@@ -1199,25 +1354,36 @@ export class Game implements GameContext {
   private render(frameDt: number): void {
     const p = this.player;
     const st = this.state.settings;
+    const calm = st.reducedMotion;
     const eye = p.eye;
-    if (!st.headBob) eye.y -= p.bobOffset;
+    if (!st.headBob || calm) eye.y -= p.bobOffset;
+    if (calm) eye.y += p.landKick * 0.08;
     this.camera.position.copy(eye);
     let jx = 0;
     let jy = 0;
     if (this.shake > 0) {
       this.shake = Math.max(0, this.shake - frameDt * 2.2);
-      if (st.screenShake) {
+      if (st.screenShake && !calm) {
         const k = this.shake * this.shake * 0.06;
         jx = (Math.random() - 0.5) * k;
         jy = (Math.random() - 0.5) * k;
       }
     }
     this.camera.rotation.set(p.pitch + jx, p.yaw + jy, 0);
-    this.camera.fov = st.fov + p.dashKick * 6;
+    this.camera.fov = st.fov + (calm ? 0 : p.dashKick * 6);
     this.camera.updateProjectionMatrix();
 
+    const rain = this.rainLevel();
     this.water.follow(eye.x, eye.z);
-    this.water.update(this.time, this.tide.waterY);
+    this.water.update(this.time, this.tide.waterY, eye, rain);
+    this.rain.update(this.time, eye, rain, this.tide.waterY);
+    const covered = (this.heights?.rainFloor(eye.x, eye.z) ?? -Infinity) > eye.y + 0.2;
+    this.sfx.setRain(rain, covered);
+    this.swimVeil = THREE.MathUtils.damp(this.swimVeil, p.water === "swimming" ? 1 : 0, 5, frameDt);
+    let gloom = 0;
+    for (const g of this.gloom) gloom = Math.max(gloom, g.depthAt(p.position));
+    this.gloomVeil = THREE.MathUtils.damp(this.gloomVeil, Math.min(1, gloom * 1.6), 3, frameDt);
+    this.sfx.setMuffle(Math.max(this.swimVeil * 0.45, this.gloomVeil * 0.55));
     this.sky.sun.target.position.set(eye.x, 0, eye.z);
     this.sky.sun.position.set(eye.x - 60, 40, eye.z - 80);
     TIDE_UNIFORMS.uTideWaterY.value = this.tide.waterY;
@@ -1226,10 +1392,11 @@ export class Game implements GameContext {
     TIDE_UNIFORMS.uTideTime.value = this.time;
     this.sfx.setListener(eye, this.camera);
 
-    this.renderer.render(this.scene, this.camera);
-
     const flicker = Math.sin(this.time * 13) * 0.5 + Math.sin(this.time * 31) * 0.5;
-    this.lantern.intensity = 5 + flicker * 0.5;
+    // The Flare: the lantern blazes and throws its light much further for a moment.
+    const flash = this.flareFlash * this.flareFlash * (calm ? 0.35 : 1);
+    this.lantern.intensity = 5 + flicker * 0.5 + flash * 70;
+    this.lantern.distance = 14 + flash * 18;
     if (this.viewmodel) {
       const k = 0.0022 * st.sensitivity;
       const dYaw = wrap(p.yaw - this.lastYaw);
@@ -1245,14 +1412,22 @@ export class Game implements GameContext {
         aspect: this.camera.aspect,
         time: this.time,
         lanternFlicker: flicker,
+        calm,
       });
-      this.renderer.autoClear = false;
-      this.renderer.clearDepth();
-      this.renderer.render(this.viewmodel.scene, this.viewmodel.camera);
-      this.renderer.autoClear = true;
     }
+    this.post.render(frameDt);
 
     this.hud.render(this.hudView(), frameDt);
+  }
+
+  /** 0..1 how hard it's raining here and now: each place has its own weather, and showers come and go. */
+  private rainLevel(): number {
+    if (!this.state.settings.rain || this.mode === "loading") return 0;
+    const [p1, p2] = RAIN.period;
+    const t = this.time;
+    const w = THREE.MathUtils.clamp(0.5 + 0.35 * Math.sin((t * Math.PI * 2) / p1) + 0.15 * Math.sin((t * Math.PI * 2) / p2 + 1.3), 0, 1);
+    const [lo, hi] = RAIN.swing;
+    return LOCATIONS[this.state.location].rain * (lo + (hi - lo) * w);
   }
 
   private hudView(): HudView {
@@ -1291,6 +1466,9 @@ export class Game implements GameContext {
         .threats()
         .map((t) => ({ angle: this.screenAngle(t.position), level: t.level }))
         .filter((t) => Math.abs(t.angle) > 0.55),
+      flare: this.flareCharge,
+      gloom: this.gloomVeil * 0.85,
+      swim: this.swimVeil * 0.9,
     };
   }
 
@@ -1360,6 +1538,7 @@ export class Game implements GameContext {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.post.setSize(window.innerWidth, window.innerHeight);
   }
 
   // ------------------------------------------------------------- debug
@@ -1398,6 +1577,11 @@ export class Game implements GameContext {
         for (const e of [...this.encounters.enemies]) e.hurt(99999, new THREE.Vector3(), false, this);
       },
       reset: () => this.resetSave(),
+      /** The pacing simulation's run through the chapter, trip by trip (loaded on demand). */
+      economy: async () => {
+        const { describePlan, planChapter } = await import("../systems/economy");
+        console.log(describePlan(planChapter()));
+      },
     };
     (window as unknown as { __ll: typeof api }).__ll = api;
   }

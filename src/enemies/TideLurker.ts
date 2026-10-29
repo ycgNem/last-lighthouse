@@ -112,6 +112,17 @@ export class TideLurker extends Enemy {
     }
   }
 
+  /** Only while it's up: the light catches it at the surface. */
+  protected override canBeDazzled(): boolean {
+    return this.rise >= 0.6 || this.state === "bite" || this.state === "recover";
+  }
+
+  /** It dives away from the light. */
+  protected override reel(dt: number, ctx: GameContext): void {
+    this.root.position.y = ctx.tide.waterY;
+    this.rise = Math.max(0, this.rise - dt * 2.5);
+  }
+
   protected animate(_dt: number, ctx: GameContext): void {
     const up = this.state === "bite" || this.state === "recover" ? 1 : this.rise;
     this.model.position.y = SUBMERGED + (0.2 - SUBMERGED) * up;

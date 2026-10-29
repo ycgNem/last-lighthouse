@@ -1,4 +1,5 @@
 import "./hud.css";
+import type { Action } from "../data/controls";
 import type { ItemStack } from "../data/ids";
 import { ITEMS } from "../data/items";
 import type { TideReading } from "../systems/tide";
@@ -31,7 +32,16 @@ export interface HudView {
   compass: { yaw: number; markers: CompassMarker[] } | null;
   boss: { name: string; frac: number; exposed: boolean } | null;
   threats: { angle: number; level: number }[];
+  /** The Lantern Flare's charge: 1 = ready. */
+  flare: number;
+  /** 0..1 how deep in a Gloom pocket you stand. */
+  gloom: number;
+  /** 0..1 how much you're in the water (chin-deep when swimming). */
+  swim: number;
 }
+
+/** What the HUD calls each key (the player can rebind them). */
+export type KeyLabels = Record<Action, string>;
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, parent: HTMLElement, html = ""): HTMLElementTagNameMap[K] => {
   const e = document.createElement(tag);
@@ -42,6 +52,7 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, parent: 
 };
 
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
 const PHASE_LABEL = { low: "Low tide", rising: "Tide rising", high: "High tide", falling: "Tide falling" } as const;
 
@@ -83,6 +94,14 @@ export class Hud {
   private readonly fadeEl: HTMLDivElement;
   private readonly cardTitle: HTMLDivElement;
   private readonly cardSub: HTMLDivElement;
+  private readonly flareEl: HTMLDivElement;
+  private readonly gloomVeil: HTMLDivElement;
+  private readonly swimVeil: HTMLDivElement;
+  private readonly captionsEl: HTMLDivElement;
+  private readonly dlgMore: HTMLDivElement;
+  private readonly controls: HTMLDivElement;
+  private keys: KeyLabels | null = null;
+  private flareWas = 1;
   private dlgLines: string[] = [];
   private bannerTimer = 0;
   private hitTimer = 0;
@@ -92,6 +111,8 @@ export class Hud {
   constructor(root: HTMLElement) {
     root.classList.add("hud");
 
+    this.swimVeil = el("div", "swim-veil", root);
+    this.gloomVeil = el("div", "gloom-veil", root);
     this.vignette = el("div", "vignette", root);
     this.hurtArc = el("div", "hurt-arc", root);
 
@@ -131,13 +152,15 @@ export class Hud {
     this.hpFill = el("div", "hp-fill", hp);
     this.hpText = el("div", "hp-text", hp);
     this.dash = el("div", "dash", vitals);
+    this.flareEl = el("div", "flare-chip", vitals);
     this.foodEl = el("div", "food", root);
     this.bagEl = el("div", "bag", root);
 
     this.dlg = el("div", "dialogue", root);
     this.dlgName = el("div", "dlg-name", this.dlg);
     this.dlgText = el("div", "dlg-text", this.dlg);
-    el("div", "dlg-more", this.dlg, "<b>E</b> continue");
+    this.dlgMore = el("div", "dlg-more", this.dlg, "<b>E</b> continue");
+    this.captionsEl = el("div", "captions", root);
 
     this.fadeEl = el("div", "fade", root);
     this.cardTitle = el("div", "card-title", this.fadeEl);
@@ -148,16 +171,41 @@ export class Hud {
       <div class="card">
         <h1>The Last Lighthouse</h1>
         <p class="sub">The lamp is failing. You are its new keeper.</p>
-        <div class="controls">
-          <span><b>WASD</b> move</span><span><b>Mouse</b> look</span><span><b>Space</b> jump</span>
-          <span><b>Shift</b> dash</span><span><b>E</b> interact</span><span><b>LMB</b> fire</span>
-          <span><b>F</b> eat</span><span><b>Z</b> next food</span><span><b>Tab</b> journal</span><span><b>Esc</b> pause</span>
-        </div>
+        <div class="controls"></div>
         <p class="go">Loading…</p>
         <p class="note hidden"></p>
       </div>`;
     this.overlayGo = this.overlay.querySelector<HTMLParagraphElement>(".go")!;
     this.overlayNote = this.overlay.querySelector<HTMLParagraphElement>(".note")!;
+    this.controls = this.overlay.querySelector<HTMLDivElement>(".controls")!;
+  }
+
+  /** Key names for every hint on screen; call again after a rebind. */
+  setKeys(k: KeyLabels): void {
+    this.keys = k;
+    this.lastPrompt = "";
+    this.dlgMore.innerHTML = `<b>${esc(k.interact)}</b> continue`;
+    const wasd = [k.forward, k.left, k.back, k.right];
+    const move = wasd.every((x) => x.length === 1) ? wasd.join("") : wasd.join(" ");
+    const rows: [string, string][] = [
+      [move, "move"],
+      ["Mouse", "look"],
+      [k.jump, "jump"],
+      [k.dash, "dash"],
+      [k.interact, "interact"],
+      [k.fire, "fire"],
+      [k.flare, "lantern flare"],
+      [k.eat, "eat"],
+      [k.cycleFood, "next food"],
+      [k.journal, "journal"],
+      [k.pause, "pause"],
+    ];
+    this.controls.innerHTML = rows.map(([key, what]) => `<span><b>${esc(key)}</b> ${what}</span>`).join("");
+  }
+
+  /** Stops the HUD's own animations (pulses, slides) for the reduced-motion setting. */
+  setReducedMotion(on: boolean): void {
+    this.overlay.parentElement?.classList.toggle("reduced-motion", on);
   }
 
   onOverlayClick(fn: () => void): void {
@@ -193,7 +241,7 @@ export class Hud {
     this.place.textContent = v.locationName + (v.safe ? " · safe" : "");
     this.place.classList.toggle("safe", v.safe);
 
-    const prompt = v.prompt ? (v.promptBlocked ? v.prompt : `<b>E</b> ${v.prompt}`) : "";
+    const prompt = v.prompt ? (v.promptBlocked ? esc(v.prompt) : `<b>${esc(this.keys?.interact ?? "E")}</b> ${esc(v.prompt)}`) : "";
     if (prompt !== this.lastPrompt) {
       this.promptEl.innerHTML = prompt;
       this.lastPrompt = prompt;
@@ -208,8 +256,21 @@ export class Hud {
       i < v.dashCharges ? `<i class="on"></i>` : i === v.dashCharges ? `<i style="--k:${v.dashRecharge.toFixed(2)}"></i>` : "<i></i>",
     ).join("");
     this.vignette.style.opacity = String(Math.max(frac < 0.3 ? (0.3 - frac) * 2 : 0, this.hurtTimer * 1.6));
+    this.gloomVeil.style.opacity = v.gloom.toFixed(3);
+    this.swimVeil.style.opacity = v.swim.toFixed(3);
 
-    this.foodEl.innerHTML = v.food ? `<b>F</b> ${v.food.name} <span>×${v.food.count}</span>` : `<span class="dim">No food packed</span>`;
+    const ready = v.flare >= 1;
+    this.flareEl.innerHTML = `<b>${esc(this.keys?.flare ?? "Q")}</b><i style="--k:${Math.min(1, v.flare).toFixed(3)}"></i>`;
+    this.flareEl.classList.toggle("ready", ready);
+    if (ready && this.flareWas < 1) {
+      // Restart the "it's back" flash.
+      this.flareEl.classList.remove("ping");
+      void this.flareEl.offsetWidth;
+      this.flareEl.classList.add("ping");
+    }
+    this.flareWas = v.flare;
+
+    this.foodEl.innerHTML = v.food ? `<b>${esc(this.keys?.eat ?? "F")}</b> ${v.food.name} <span>×${v.food.count}</span>` : `<span class="dim">No food packed</span>`;
     this.bagEl.innerHTML = `Satchel ${v.satchel.used}/${v.satchel.cap}${v.haul !== null ? ` · <span>Haul ${v.haul}</span>` : ""}`;
     this.bagEl.classList.toggle("full", v.satchel.used >= v.satchel.cap);
 
@@ -283,6 +344,35 @@ export class Hud {
     setTimeout(() => t.classList.add("out"), ms);
     setTimeout(() => t.remove(), ms + 600);
     while (this.toasts.children.length > 6) this.toasts.firstElementChild?.remove();
+  }
+
+  /**
+   * A caption for a sound, with an arrow for where it came from (null: all
+   * around, or no direction). Repeats within a moment merge into "×2".
+   */
+  caption(text: string, side: "left" | "right" | "behind" | null): void {
+    const label = side === "left" ? `◀ ${text}` : side === "right" ? `${text} ▶` : side === "behind" ? `${text} ▼` : text;
+    const last = this.captionsEl.lastElementChild as HTMLDivElement | null;
+    if (last && last.dataset.label === label && !last.classList.contains("out")) {
+      const n = Number(last.dataset.n ?? "1") + 1;
+      last.dataset.n = String(n);
+      last.textContent = `${label} ×${n}`;
+      clearTimeout(Number(last.dataset.timer));
+      last.dataset.timer = String(this.expire(last));
+      return;
+    }
+    const line = el("div", "caption", this.captionsEl);
+    line.dataset.label = label;
+    line.textContent = label;
+    line.dataset.timer = String(this.expire(line));
+    while (this.captionsEl.children.length > 4) this.captionsEl.firstElementChild?.remove();
+  }
+
+  private expire(line: HTMLElement): number {
+    return window.setTimeout(() => {
+      line.classList.add("out");
+      setTimeout(() => line.remove(), 400);
+    }, 2600);
   }
 
   banner(text: string, seconds = 4): void {

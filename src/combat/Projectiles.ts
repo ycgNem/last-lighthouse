@@ -48,9 +48,19 @@ export class Projectiles {
   /** Enemies, refreshed by the world each frame. */
   targets: Hittable[] = [];
   private readonly shots: Shot[] = [];
-  private readonly boltMat = new THREE.MeshBasicMaterial({ color: 0xffc46b, toneMapped: false });
-  private readonly orbMat = new THREE.MeshBasicMaterial({ color: FX_COLORS.seaGreen, toneMapped: false });
+  // Brighter than white on purpose: bolts and orbs are light sources, so they keep their colour
+  // through the tone mapping and pick up a bloom halo.
+  private readonly boltMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffc46b).multiplyScalar(2.6) });
+  private readonly orbMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(FX_COLORS.seaGreen).multiplyScalar(1.6) });
   private readonly haloMat = new THREE.MeshBasicMaterial({ color: FX_COLORS.seaGreen, transparent: true, opacity: 0.28, depthWrite: false, blending: THREE.AdditiveBlending });
+  /**
+   * High-contrast shots: a pale body inside a dark rim, so an orb reads by its outline and
+   * value, not just its hue. The body stays below the bloom threshold, or the glow would wash
+   * the rim out.
+   */
+  private readonly rimMat = new THREE.MeshBasicMaterial({ color: 0x05090c, side: THREE.BackSide });
+  private readonly orbFlatMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(FX_COLORS.seaGreen).lerp(new THREE.Color(0xffffff), 0.35) });
+  private contrast = false;
 
   private take(kind: Kind): Shot {
     let s = this.shots.find((x) => !x.active && x.kind === kind);
@@ -59,10 +69,18 @@ export class Projectiles {
       if (kind === "bolt") mesh = new THREE.Mesh(boltGeo, this.boltMat);
       else {
         mesh = new THREE.Group();
-        mesh.add(new THREE.Mesh(orbGeo, this.orbMat));
+        const body = new THREE.Mesh(orbGeo, this.orbMat);
+        body.name = "body";
+        mesh.add(body);
         const halo = new THREE.Mesh(orbGeo, this.haloMat);
         halo.scale.setScalar(1.8);
+        halo.name = "halo";
         mesh.add(halo);
+        const rim = new THREE.Mesh(orbGeo, this.rimMat);
+        rim.scale.setScalar(1.3);
+        rim.name = "rim";
+        mesh.add(rim);
+        this.applyContrast(mesh);
       }
       s = { kind, active: false, pos: new THREE.Vector3(), prev: new THREE.Vector3(), vel: new THREE.Vector3(), radius: 0, damage: 0, life: 0, gravity: 0, pierce: 0, hits: new Set(), mesh, blast: 0 };
       this.shots.push(s);
@@ -72,6 +90,19 @@ export class Projectiles {
     s.mesh.visible = true;
     this.group.add(s.mesh);
     return s;
+  }
+
+  setContrast(on: boolean): void {
+    this.contrast = on;
+    for (const s of this.shots) if (s.kind !== "bolt") this.applyContrast(s.mesh);
+  }
+
+  private applyContrast(mesh: THREE.Object3D): void {
+    for (const c of mesh.children) {
+      if (c.name === "halo") c.visible = !this.contrast;
+      else if (c.name === "rim") c.visible = this.contrast;
+      else if (c.name === "body") (c as THREE.Mesh).material = this.contrast ? this.orbFlatMat : this.orbMat;
+    }
   }
 
   firePlayer(origin: THREE.Vector3, direction: THREE.Vector3, speed: number, damage: number, pierce: number): void {

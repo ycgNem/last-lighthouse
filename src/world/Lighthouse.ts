@@ -23,7 +23,8 @@ function beamMaterial(): THREE.ShaderMaterial {
       vN = normalize(normalMatrix * normal); vView = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }`,
     fragmentShader: `uniform vec3 color; uniform float intensity; varying vec2 vUv; varying vec3 vN; varying vec3 vView;
       void main(){
-        float along = vUv.y;
+        // Clamped: multisampling can extrapolate uv a hair past 0, and pow() of a negative is NaN.
+        float along = clamp(vUv.y, 0.0, 1.0);
         float edge = pow(abs(dot(vN, vView)), 1.5);
         float a = pow(along, 1.6) * edge * 0.55 * intensity;
         gl_FragColor = vec4(color * a, a);
@@ -121,6 +122,8 @@ export function stageLook(v: StageVisuals): BeamLook {
 export class Lighthouse {
   readonly group = new THREE.Group();
   readonly rig = new BeamRig({ lights: true });
+  /** The greybox tower, replaced by dress(). */
+  private readonly greybox: THREE.Mesh[] = [];
 
   constructor() {
     const stone = new THREE.MeshStandardMaterial({ color: 0xc9c3b5, roughness: 0.9 });
@@ -156,6 +159,32 @@ export class Lighthouse {
 
     this.rig.pivot.position.y = TOWER_HEIGHT + 1.9;
     this.group.add(this.rig.pivot);
+    this.group.traverse((o) => {
+      if ((o as THREE.Mesh).isMesh && o.parent === this.group) this.greybox.push(o as THREE.Mesh);
+    });
+  }
+
+  /**
+   * Swaps the greybox for the Blender tower (home.glb HOME_lighthouse). Its lamp
+   * room glazing (material GLASS_lantern) becomes see-through so the lamp and
+   * the beam show inside it.
+   */
+  dress(model: THREE.Object3D): void {
+    for (const m of this.greybox) m.visible = false;
+    model.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      const mats = Array.isArray(m.material) ? m.material : [m.material];
+      for (const mat of mats as THREE.MeshStandardMaterial[]) {
+        if (!mat.name.startsWith("GLASS_")) continue;
+        mat.transparent = true;
+        mat.opacity = 0.28;
+        mat.depthWrite = false;
+        mat.side = THREE.DoubleSide;
+        m.castShadow = false;
+      }
+    });
+    this.group.add(model);
   }
 
   applyStage(v: StageVisuals): void {

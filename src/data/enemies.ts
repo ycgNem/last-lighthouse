@@ -27,6 +27,8 @@ export interface EnemyDef {
   combatXp: number;
   model: string;
   grantsFlag?: FlagId;
+  /** Seconds the Lantern Flare staggers it (cancels a windup). 0: immune. */
+  flareStagger: number;
 }
 
 export const ENEMIES: Record<EnemyId, EnemyDef> = {
@@ -45,6 +47,7 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
     ],
     combatXp: 12,
     model: "enemies/brine_crab.glb",
+    flareStagger: 1.4,
   },
   drowned_spitter: {
     name: "Drowned Spitter",
@@ -60,6 +63,7 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
     ],
     combatXp: 18,
     model: "enemies/drowned_spitter.glb",
+    flareStagger: 1.6,
   },
   lantern_wisp: {
     name: "Lantern Wisp",
@@ -75,6 +79,8 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
     ],
     combatXp: 16,
     model: "enemies/lantern_wisp.glb",
+    // Weak to light (GDD §7): long enough to shoot it down.
+    flareStagger: 3.5,
   },
   tide_lurker: {
     name: "Tide Lurker",
@@ -90,6 +96,8 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
     ],
     combatXp: 26,
     model: "enemies/tide_lurker.glb",
+    // Dives away from the light.
+    flareStagger: 1.2,
   },
   wreck_guardian: {
     name: "Wreck Guardian",
@@ -109,6 +117,8 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
     ],
     combatXp: 300,
     model: "enemies/wreck_guardian.glb",
+    // Far too vast.
+    flareStagger: 0,
     grantsFlag: "guardian_defeated",
   },
 };

@@ -55,7 +55,7 @@ The source prompt described a top-down RotMG-style game. This project is
 | Tide shown as tiles flooding | **Water plane physically rises ~1.8 m**. Diegetic **tide poles** with painted bands, foam "tide lines" on surfaces that will flood | Height is the 3D language for tide. |
 | High tide opens water routes | **Buoyant platforms** (crates, rafts, hull pieces) float up with the water and form new paths to upper decks | A mechanic that only works in 3D. |
 | Map screen | **Chart table** in the lighthouse lamp room; the beam visibly sweeps across the fog on the chart | Keeps travel diegetic. |
-| Light = flavour | **Keeper's Lantern** held in the left hand: your personal light, and (M6) a **Flare** that staggers enemies and burns away Gloom pockets | Darkness matters more in first person; the lantern is the lighthouse in miniature. |
+| Light = flavour | **Keeper's Lantern** held in the left hand: your personal light, and a **Flare** (Q) that staggers enemies and burns away Gloom pockets | Darkness matters more in first person; the lantern is the lighthouse in miniature. |
 | — | **The beam is visible from every destination** on the horizon | You always know where home is. Sanctuary as a landmark. |
 | — | **Tide Lurker** enemy (new) that hunts in deep water at high tide | Gives high tide its own danger without making it unplayable. |
 
@@ -178,12 +178,20 @@ patterns and knowing when to retreat — not health sponges.
 | Interact / gather / reel | E |
 | Eat quick-slot food | F |
 | Cycle food | Z |
-| Lantern Flare (M6) | Q |
+| Lantern Flare | Q |
 | Journal / inventory | Tab |
 | Pause / settings | Esc |
 
 ### Player
 - 100 HP base (+5 per Combat level).
+- **Lantern Flare (Q):** a 15 m cone of light (42° either side of where you look),
+  9 s cooldown. Every enemy it reaches (not through walls) staggers for its own
+  time (Wisps longest, the Guardian not at all: it's too vast to dazzle), and
+  every Gloom pocket the cone touches, or that you're within 4 m of, burns away
+  until your next visit.
+- **Gloom pockets** (`GLOOM_` markers) hang over loot in the dark places: the
+  nodes inside are shrouded (no gathering) and standing in one chills you after
+  1.2 s, 4 HP a second, but never below 15 HP. Flare them.
 - **Dash:** 6 m burst in move direction (forward if idle), 0.28 s invulnerable,
   1.2 s cooldown. Combat 5 grants a second charge.
 - **Eating:** 0.6 s animation, can move at half speed while eating. Heals over 1 s.
@@ -214,7 +222,7 @@ Combat 8: hold LMB to charge a heavy bolt.
 |---|---|---|---|
 | **Brine Crab** | Shore, Wreck | Scuttles sideways toward you, rears up (0.6 s, claws glow), lunges 5 m in a straight line, then is stuck briefly | Dash sideways; punish the recovery |
 | **Drowned Spitter** | Wreck, Beacon | Stationary-ish, waterlogged corpse in kelp. Inhales (0.7 s, throat glows), fires a slow fan of 3–5 orbs | Strafe through the gaps, use cover |
-| **Lantern Wisp** | Wreck (dark areas), Beacon | Floats, blinks to a new position, then fires 2 aimed shots with a charge glow. Weak to light | Track the blink sound; (M6) Flare stuns it |
+| **Lantern Wisp** | Wreck (dark areas), Beacon | Floats, blinks to a new position, then fires 2 aimed shots with a charge glow. Weak to light | Track the blink sound; a Flare stuns it for 3.5 s |
 | **Tide Lurker** *(new)* | Deep water at high tide | Shown by a moving ripple + bubbles. If you're swimming or at the edge, it surfaces (0.8 s), bites | Stay out of marked deep zones or get out fast |
 | **Wreck Guardian** (boss) | Saltmere Beacon | A colossus of fused hulls and chain rising from the water around the beacon rock. See §11 | Positioning around a generous ring arena |
 

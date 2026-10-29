@@ -4,20 +4,32 @@ All 3D art is made in **Blender** (4.x/5.x) and exported as **glTF binary (.glb)
 Sources live in `art/blender/`, exports in `public/assets/models/`.
 
 ```
-tools/blender/build/   props.py  enemies.py  viewmodels.py  shore.py  wreck.py  beacon.py
-tools/blender/lib/     kit.py (shared helpers: B(), materials, mesh builder, terrain, export)
+tools/blender/build/   props.py  enemies.py  viewmodels.py  home.py  shore.py  wreck.py  beacon.py
+tools/blender/lib/     kit.py (shared helpers: B(), Paint, mesh builder, terrain, export)
+tools/blender/         review.py (render sheets to check by eye)  preview.py  export_gltf.py
 art/blender/
   props/props.blend              every PROP_<id> (nodes, crates, lanterns, boat…)
   enemies/enemies.blend          every MODEL_<enemy id>
   viewmodels/viewmodels.blend    VM_boltcaster_mk1/mk2, VM_lamplighter, VM_lantern, VM_rod_*, VM_bobber
+  home/home.blend                every HOME_<name>: Lantern's Rest's buildings and dressing
   locations/shore.blend  wreck.blend  beacon.blend
 public/assets/models/
-  props.glb  enemies.glb  viewmodels.glb       loaded once at boot, cloned by name
-  locations/<id>.glb                            loaded when you travel there
+  props.glb  enemies.glb  viewmodels.glb  home.glb   loaded once at boot, cloned by name
+  locations/<id>.glb                                  loaded when you travel there
 ```
 
-Lantern's Rest (home) is built in code (`src/world/home/HomeLevel.ts`) because so
-much of it changes with progression.
+Lantern's Rest (home) is laid out in code (`src/world/home/HomeLevel.ts`) because
+so much of it changes with progression, but what you see there is modelled:
+`home.py` makes each `HOME_<name>` with its own origin, sized to the collision box
+the code already uses, and the code sets it in place. Children it looks for by
+name: `window_*` (lit one by one as the stage rises), `mouth` (the forge's
+firebox), `coals` (the hearth), `smoke` (where chimney smoke starts) and `COL_*`
+(extra collision: benches, barrels, the anvil).
+
+The people at home are free characters from [Polyfork](https://polyfork.dev),
+loaded from Polyfork's CDN at run time (`src/data/villagers.ts`). Their licence
+lets a game use them but not redistribute the files, so **never copy a Polyfork
+file into the repo** (or into `public/`); hotlink it.
 
 ## Building
 
@@ -43,14 +55,24 @@ To hand-edit instead: open the `.blend`, change it, and export with
 re-running that level's build script overwrites hand edits, so move anything
 you want to keep into the script.
 
-Preview a file without opening Blender:
+Check what you built without opening Blender. `review.py` renders a sheet: every
+object with a prefix framed on its own, or eye-level shots from game-space
+cameras, optionally with the sea at a given height (`--show-col` draws the
+collision too):
 
 ```bash
-blender -b art/blender/locations/wreck.blend --python tools/blender/preview.py -- .previews/wreck.png 200 38
+blender -b art/blender/props/props.blend --python tools/blender/review.py -- .previews/props.png --prefix PROP_ --views 2
+```
+
+```bash
+blender -b art/blender/locations/wreck.blend --python tools/blender/review.py -- .previews/wreck.png --shots shots.json --water 1.8
 ```
 
 `tests/levels.test.ts` reads the exported levels and checks the markers below and
-the node/enemy counts against `src/data/locations.ts`.
+the node/enemy counts against `src/data/locations.ts`. `tests/tide-sweep.test.ts`
+walks every level on a 1 m grid the way the player moves and fails if anywhere
+you can reach can't lead back to the landing at low *and* high tide (in every
+`STATE_` combination), or if a node or interactable can't be reached at all.
 
 ## Scale & orientation
 
@@ -76,20 +98,36 @@ the node/enemy counts against `src/data/locations.ts`.
 | `TRIG_*` + prop `event` | mesh | Hidden volume; entering fires `event` (`boss`, or `toast:<text>` for a one-time hint) |
 | `STATE_<flag>_<on\|off>` | any | Shown only when the flag is set (`on`) or unset (`off`); collision follows. E.g. `STATE_guardian_defeated_off` rubble |
 | `FX_<name>` | empty | A named point: `home_light` (beam on the horizon), `arena`, `beacon_lamp`, `ambush_<enemy id>_<n>` (spawned when you take the lens) |
+| `GLOOM_*` + prop `radius` | empty | A Gloom pocket centred here, on the ground, spreading `radius` metres round it (between 1 and 6). Keep it clear of anchors and the landing; the count per level is in `locations.ts` |
 | prop `light: "warm"` (+ `light_offset`) | any | Adds a warm point light (lantern posts, braziers) |
 | material `TIDE_*` | material | Glows with the flood warning between the water and the high-tide line |
 | material `GLOW_*` | enemy material | Telegraph glow driven by the enemy's threat |
 | `PROP_<id>` | props.blend | Cloned by id (`assets.prop(id)`) |
 | `MODEL_<enemy id>` | enemies.blend | Cloned per enemy; named parts are animated in code (`arm_l`, `arm_r`, `heart`, `claw_*`, …) |
 | `VM_*` | viewmodels.blend | First-person models; a rod's `tip` empty anchors the fishing line |
+| `HOME_*` | home.blend | Home's buildings and dressing, placed by `HomeLevel.ts` |
 
 Custom properties are Object Properties → Custom Properties; they arrive in Three
 as `object.userData`.
 
+### Collision
+
+- `COL_` meshes are **closed and wound outward**: a floor's top faces up. The
+  tide sweep fails on a floor that faces down (`kit` boxes are fine; check
+  anything built from raw faces, and fix it in the script).
+- Gaps narrower than ~0.5 m are walked over (the capsule is 0.7 m across); wider
+  ones are holes the player can drop into, so close them where a path crosses.
+- Anything the player stands on that the eye reads as supported should be: the
+  beacon's arena gate stands on a coursed footing, not over the rock's drop.
+
 ## Materials & look
 
-- **Principled BSDF only** (maps to `MeshStandardMaterial`). Flat colour per
-  material plus vertex colour on terrain; no image textures yet.
+- **Principled BSDF only** (maps to `MeshStandardMaterial`), **no image
+  textures**. Colour is painted per vertex: a `kit.Paint` is a shading material
+  (a finish: stone, timber, iron…) plus the colour it's painted with, so a whole
+  model needs only a material or two. `MB.build()` bakes ambient occlusion and
+  grime into the vertex colours, and `tideline=True` adds the wet band, the salt
+  line and the weed-dark below low water.
 - Stylised, chunky shapes, clear silhouettes, low poly.
 - Emissive is gameplay language: **amber = safe/player/home**, **sea-green =
   supernatural/enemy**, **white-gold sparkle = loot**. Don't use sea-green emissive
@@ -109,6 +147,17 @@ as `object.userData`.
 | Wet sand | `#8f8366` |
 | Supernatural sea-green | `#3dffb0` |
 | Gloom | `#132028` |
+
+## Performance
+
+Budget: **under 300 draw calls** in every location with every enemy alive (the
+wreck, the worst, is at about 296). At load the game merges every static mesh
+that shares a material into one (`src/world/Batch.ts`), so scatter costs nothing
+extra per copy. What stays separate is anything the game moves, hides or lets
+you use: names starting `NODE_ BUOY_ STATE_ INT_ TRIG_ COL_ ENEMY_ SPAWN_ ANCHOR_
+FX_ GLOOM_`, and anything with an `interact` property. Those, and enemies and
+viewmodels, have their per-material split folded into one vertex-coloured mesh
+when they're rigid; named parts that animate stay apart.
 
 ## Animation
 

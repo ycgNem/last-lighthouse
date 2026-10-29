@@ -27,6 +27,10 @@ export interface LocationDef {
   enemies: EnemySpawn[];
   /** Fog start / end in metres. Fog never starts closer than combat range. */
   fog: [number, number];
+  /** 0..1 how hard it rains here at the peak of a shower. */
+  rain: number;
+  /** GLOOM_ pockets in the .glb (the level test checks the count). */
+  gloom: number;
 }
 
 export const LOCATIONS: Record<LocationId, LocationDef> = {
@@ -39,6 +43,8 @@ export const LOCATIONS: Record<LocationId, LocationDef> = {
     nodes: [],
     enemies: [],
     fog: [60, 220],
+    rain: 0.35,
+    gloom: 0,
   },
   shore: {
     name: "Gullwash Shore",
@@ -61,6 +67,8 @@ export const LOCATIONS: Record<LocationId, LocationDef> = {
       { enemy: "brine_crab", count: 2, tide: "high" },
     ],
     fog: [45, 160],
+    rain: 0.5,
+    gloom: 1,
   },
   wreck: {
     name: "Wreck of the Meridian",
@@ -84,6 +92,8 @@ export const LOCATIONS: Record<LocationId, LocationDef> = {
       { enemy: "tide_lurker", count: 2, tide: "high" },
     ],
     fog: [40, 140],
+    rain: 0.75,
+    gloom: 2,
   },
   beacon: {
     name: "Saltmere Beacon",
@@ -98,5 +108,7 @@ export const LOCATIONS: Record<LocationId, LocationDef> = {
       { enemy: "wreck_guardian", count: 1, tide: "any" },
     ],
     fog: [40, 150],
+    rain: 0.9,
+    gloom: 2,
   },
 };

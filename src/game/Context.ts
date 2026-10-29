@@ -2,6 +2,7 @@ import type * as THREE from "three";
 import type { Assets } from "../core/Assets";
 import type { EventBus } from "../core/EventBus";
 import type { Input } from "../core/Input";
+import type { Action } from "../data/controls";
 import type { ItemId, SkillId } from "../data/ids";
 import type { PlayerController } from "../player/PlayerController";
 import type { GameState } from "../state/GameState";
@@ -34,4 +35,8 @@ export interface GameContext {
   give(item: ItemId, qty: number, from?: THREE.Vector3): number;
   xp(skill: SkillId, amount: number): void;
   hurtPlayer(amount: number, from: THREE.Vector3 | null): void;
+  /** True where a Gloom pocket hangs (nothing there can be gathered until a Flare burns it off). */
+  shrouded(at: THREE.Vector3): boolean;
+  /** The key the player has bound to an action, for prompts ("Q"). */
+  keyLabel(action: Action): string;
 }

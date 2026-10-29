@@ -141,9 +141,22 @@ export class LanternWisp extends Enemy {
     ctx.sfx.orb(from);
   }
 
+  /** Weak to light: the Flare snuffs its glow and it sinks, wobbling, until it gathers itself. */
+  protected override reel(dt: number, ctx: GameContext): void {
+    this.model.scale.setScalar(1);
+    const p = this.root.position;
+    const g = ctx.level.collider.groundHeight(p.x, p.z, p.y + 2, 20);
+    const base = Math.max(g, ctx.tide.waterY);
+    p.y = THREE.MathUtils.damp(p.y, base + FLOAT * 0.45, 2.5, dt);
+    this.velocity.multiplyScalar(Math.exp(-4 * dt));
+    p.x += this.velocity.x * dt;
+    p.z += this.velocity.z * dt;
+    this.model.rotation.z = Math.sin(this.stateTime * 9) * 0.25;
+  }
+
   protected animate(dt: number, _ctx: GameContext): void {
     const cage = this.part("cage");
-    if (cage) cage.rotation.y += dt * (0.8 + this.threat * 4);
+    if (cage) cage.rotation.y += dt * (this.dazzled > 0 ? 0.15 : 0.8 + this.threat * 4);
     for (let i = 0; i < 4; i++) {
       const t = this.part(`tendril_${i}`);
       if (t) {

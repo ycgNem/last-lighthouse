@@ -7,8 +7,13 @@ import * as THREE from "three";
 type Ambience = "home" | "shore" | "wreck" | "beacon" | "none";
 
 export class Sfx {
+  /** Text for the important cues, for the captions setting (with where it came from, if anywhere). */
+  onCaption: ((text: string, at?: THREE.Vector3) => void) | null = null;
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
+  /** Everything passes through this: it closes down to a murmur under the water or in the Gloom. */
+  private muffler: BiquadFilterNode | null = null;
+  private rain: { gain: GainNode; tone: BiquadFilterNode } | null = null;
   private noiseBuf: AudioBuffer | null = null;
   private ambience: { kind: Ambience; nodes: AudioNode[]; gain: GainNode } | null = null;
   private volume = 0.8;
@@ -20,11 +25,15 @@ export class Sfx {
       this.ctx = new AudioContext();
       this.master = this.ctx.createGain();
       this.master.gain.value = this.volume;
-      this.master.connect(this.ctx.destination);
+      this.muffler = this.ctx.createBiquadFilter();
+      this.muffler.type = "lowpass";
+      this.muffler.frequency.value = 20000;
+      this.master.connect(this.muffler).connect(this.ctx.destination);
       const len = this.ctx.sampleRate * 2;
       this.noiseBuf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
       const d = this.noiseBuf.getChannelData(0);
       for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+      this.startRain();
     }
     void this.ctx.resume();
   }
@@ -32,6 +41,43 @@ export class Sfx {
   setVolume(v: number): void {
     this.volume = v;
     if (this.master) this.master.gain.value = v;
+  }
+
+  /** 0 = clear, 1 = heard from under the water. */
+  setMuffle(k: number): void {
+    if (!this.ctx || !this.muffler) return;
+    this.muffler.frequency.setTargetAtTime(20000 * Math.pow(0.03, k), this.ctx.currentTime, 0.08);
+  }
+
+  /** A hiss of rain on the sea and the sand; under a roof it turns to a dull drumming. */
+  private startRain(): void {
+    if (!this.ctx || !this.master || !this.noiseBuf) return;
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.noiseBuf;
+    src.loop = true;
+    const hi = this.ctx.createBiquadFilter();
+    hi.type = "highpass";
+    hi.frequency.value = 900;
+    const tone = this.ctx.createBiquadFilter();
+    tone.type = "lowpass";
+    tone.frequency.value = 7000;
+    const gain = this.ctx.createGain();
+    gain.gain.value = 0;
+    src.connect(hi).connect(tone).connect(gain).connect(this.master);
+    src.start(0, Math.random() * 2);
+    this.rain = { gain, tone };
+  }
+
+  /** `level` 0..1; `covered` when there's a roof or a deck over your head. */
+  setRain(level: number, covered: boolean): void {
+    if (!this.ctx || !this.rain) return;
+    const t = this.ctx.currentTime;
+    this.rain.gain.gain.setTargetAtTime(level * (covered ? 0.05 : 0.07), t, 0.4);
+    this.rain.tone.frequency.setTargetAtTime(covered ? 1100 : 7000, t, 0.3);
+  }
+
+  private cap(text: string, at?: THREE.Vector3): void {
+    this.onCaption?.(text, at);
   }
 
   setListener(pos: THREE.Vector3, camera: THREE.Camera): void {
@@ -150,9 +196,11 @@ export class Sfx {
   }
   /** Rising tone during an attack windup: the most important cue in combat. */
   windup(at: THREE.Vector3, dur: number, pitch = 1): void {
+    this.cap("Rising whine: an attack", at);
     this.tone({ type: "triangle", f0: 180 * pitch, f1: 520 * pitch, dur, gain: 0.09, attack: dur * 0.6, at });
   }
   orb(at: THREE.Vector3): void {
+    this.cap("Spit", at);
     this.tone({ type: "sine", f0: 320, f1: 160, dur: 0.3, gain: 0.08, at });
     this.noise({ dur: 0.25, gain: 0.08, freq: 700, at });
   }
@@ -160,9 +208,11 @@ export class Sfx {
     this.noise({ dur: 0.1, gain: 0.08, freq: 1800, at });
   }
   crabClick(at: THREE.Vector3): void {
+    this.cap("Clicking claws", at);
     for (let i = 0; i < 2; i++) this.noise({ dur: 0.03, gain: 0.12, freq: 3500, q: 6, at, delay: i * 0.07 });
   }
   blink(at: THREE.Vector3): void {
+    this.cap("Chime: a wisp blinks", at);
     this.tone({ type: "sine", f0: 1200, f1: 2400, dur: 0.2, gain: 0.06, at });
   }
   bite(at: THREE.Vector3): void {
@@ -170,18 +220,40 @@ export class Sfx {
     this.tone({ type: "square", f0: 90, f1: 50, dur: 0.2, gain: 0.08, at });
   }
   bubbles(at: THREE.Vector3): void {
+    this.cap("Bubbling", at);
     for (let i = 0; i < 4; i++) this.tone({ f0: 400 + Math.random() * 500, f1: 900, dur: 0.06, gain: 0.03, at, delay: i * 0.08 });
   }
   roar(at: THREE.Vector3): void {
+    this.cap("Roar", at);
     this.tone({ type: "sawtooth", f0: 70, f1: 40, dur: 1.4, gain: 0.25, attack: 0.3, at, lowpass: 400 });
     this.noise({ dur: 1.4, gain: 0.25, freq: 200, type: "lowpass", attack: 0.3, at });
   }
   boom(at: THREE.Vector3): void {
+    this.cap("Boom", at);
     this.noise({ dur: 0.6, gain: 0.3, freq: 180, type: "lowpass", at });
     this.tone({ type: "sine", f0: 90, f1: 35, dur: 0.6, gain: 0.2, at });
   }
   chain(at: THREE.Vector3): void {
+    this.cap("Chains rattle", at);
     for (let i = 0; i < 6; i++) this.noise({ dur: 0.05, gain: 0.08, freq: 2800 + Math.random() * 1500, q: 5, at, delay: i * 0.06 });
+  }
+
+  // ---------------------------------------------------------------- flare
+
+  /** The Lantern Flare: a rush of air and a bright chord. */
+  flare(): void {
+    this.cap("Lantern flares");
+    this.noise({ dur: 0.45, gain: 0.2, freq: 500, sweepTo: 5000, q: 0.7 });
+    [784, 1175, 1568].forEach((f, i) => this.tone({ type: "triangle", f0: f, f1: f * 1.02, dur: 0.9, gain: 0.05, delay: i * 0.03, attack: 0.02 }));
+  }
+  /** The lantern has its strength back. */
+  flareReady(): void {
+    this.tone({ f0: 1319, dur: 0.18, gain: 0.025 });
+  }
+  /** A Gloom pocket burning away: a long falling hiss. */
+  gloomBurn(at: THREE.Vector3): void {
+    this.cap("The Gloom hisses away", at);
+    this.noise({ dur: 1.2, gain: 0.16, freq: 3000, sweepTo: 300, q: 0.6, at });
   }
 
   // ------------------------------------------------------------- world, ui
@@ -208,6 +280,7 @@ export class Sfx {
     [392, 523, 659, 784, 1047].forEach((f, i) => this.tone({ type: "triangle", f0: f, dur: 0.9, gain: 0.07, delay: i * 0.16, attack: 0.05 }));
   }
   horn(): void {
+    this.cap("Tide horn");
     this.tone({ type: "sawtooth", f0: 98, dur: 2.2, gain: 0.12, attack: 0.4, lowpass: 600 });
     this.tone({ type: "sawtooth", f0: 147, dur: 2.2, gain: 0.07, attack: 0.4, lowpass: 600 });
   }
@@ -218,6 +291,7 @@ export class Sfx {
     this.tone({ type: "square", f0: 160, dur: 0.12, gain: 0.04, lowpass: 800 });
   }
   fishBite(): void {
+    this.cap("Splash: a bite!");
     this.splash();
     this.tone({ f0: 1200, f1: 900, dur: 0.15, gain: 0.06 });
   }

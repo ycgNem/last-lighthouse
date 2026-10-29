@@ -1,3 +1,4 @@
+import type { BindingOverrides } from "../data/controls";
 import type { FlagId, GearId, ItemId, ItemStack, LocationId, NpcId, ProjectId, SkillId, StageIndex } from "../data/ids";
 import { STARTING_GEAR } from "../data/items";
 import { TIDE } from "../data/tide";
@@ -10,6 +11,16 @@ export interface Settings {
   volume: number;
   screenShake: boolean;
   headBob: boolean;
+  /** Glow round lamps, the beam and anything burning brighter than white. */
+  bloom: boolean;
+  rain: boolean;
+  /** One switch for everything that moves the view on its own: shake, bob, dash kick, sway, flashes. */
+  reducedMotion: boolean;
+  /** Dark rims round pale enemy orbs, so they don't rely on colour. */
+  contrastShots: boolean;
+  /** Text for important sounds: horns, windups, chimes, roars, with the direction. */
+  captions: boolean;
+  bindings: BindingOverrides;
 }
 
 /** The entire save. Everything runtime-only is rebuilt from this. */
@@ -50,6 +61,18 @@ export function createNewGame(): GameState {
     quest: { step: 0, crafted: {}, talked: [] },
     trackedItem: null,
     foodSlot: null,
-    settings: { sensitivity: 1, fov: 75, volume: 0.8, screenShake: true, headBob: true },
+    settings: {
+      sensitivity: 1,
+      fov: 75,
+      volume: 0.8,
+      screenShake: true,
+      headBob: true,
+      bloom: true,
+      rain: true,
+      reducedMotion: false,
+      contrastShots: false,
+      captions: false,
+      bindings: {},
+    },
   };
 }

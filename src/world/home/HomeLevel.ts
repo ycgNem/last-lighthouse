@@ -1,22 +1,84 @@
 import * as THREE from "three";
+import type { Assets } from "../../core/Assets";
 import { rng } from "../../core/math";
 import type { NpcId, ProjectId, StageIndex } from "../../data/ids";
 import type { StageVisuals } from "../../data/lighthouse";
 import { NPCS } from "../../data/npcs";
+import { FAMILY_LOOKS, NPC_LOOKS } from "../../data/villagers";
 import { StaticCollider } from "../../physics/StaticCollider";
 import type { EnemyMarker, Level, LevelInteract, LevelUpdate, NodeMarker } from "../Level";
 import { disposeObject } from "../Level";
+import { batchStatic } from "../Batch";
 import { Lighthouse } from "../Lighthouse";
+import { headlandTop, wear, type Segment, type Worn } from "./Headland";
+import { Villager } from "./Villager";
 
 // Lantern's Rest, built in code and laid out per docs/LEVELS.md. The three
-// expedition locations come from Blender; home stays procedural for now
-// because so much of it changes with progression (see applyProgress).
+// expedition locations come from Blender; home stays in code because so much
+// of it changes with progression (see applyProgress).
+//
+// The constructor builds a greybox that is also the collision. dress() then
+// lays the Blender models over it (home.glb, props.glb; tools/blender/build/
+// home.py) and hides the greybox, so the art never moves a collision surface.
+// Without the models the greybox is still a playable home.
 
 const CLIFF_TOP = 3;
 const DOCK_Y = 2.7;
 const DOCK_X = 6;
+const RADIUS = 46;
+
+/** Worn paths between the lighthouse, the square, the dock and the cliff path. */
+const PATHS: readonly Segment[] = [
+  [22, -15, 2, 0],
+  [2, 0, 6, 44],
+  [-4, 4, -40, 8],
+];
+/** Bare ground: the square, the lighthouse door, the forge apron, the dock head, the signpost. */
+const WORN: readonly Worn[] = [
+  { x: -1, z: 1, r: 6.5, k: 0.8 },
+  { x: 22, z: -15.5, r: 3.2, k: 0.9 },
+  { x: 12, z: 8.6, r: 3.6, k: 0.7 },
+  { x: 6, z: 43.5, r: 2.6, k: 0.9 },
+  { x: -40, z: 9, r: 3, k: 0.7 },
+];
+/** Cottages (x, z, yaw). Windows light in this order as the stage rises. */
+const COTTAGES = [
+  [-16, -6, 0.3],
+  [-26, 10, -0.4],
+  [-8, -24, 0.1],
+  [-30, -14, 0.8],
+  [-14, 22, -0.2],
+] as const;
+const COTTAGE_MODELS = ["HOME_cottage_a", "HOME_cottage_b", "HOME_cottage_c", "HOME_cottage_b", "HOME_cottage_a"];
+const LANTERN_POSTS = [
+  [16, -10],
+  [6, -2],
+  [4, 14],
+  [5, 28],
+  [7.8, 40],
+  [-24, 6],
+  [-38, 5],
+] as const;
+/** Dock planks missing until the dock project. */
+const MISSING_PLANKS = [9, 10, 11, 18, 19];
+/** Kept clear of grass tufts: buildings, the square, the dock head. */
+const CLEAR: readonly [number, number, number][] = [
+  [22, -20, 6.5],
+  [0, 2, 5],
+  [-4, -1, 2],
+  [12, 6, 4.5],
+  [6, 44, 3],
+  [-41, 11, 2],
+  ...COTTAGES.map(([x, z]) => [x, z, 4.6] as [number, number, number]),
+];
 
 const mat = (color: number, extra: THREE.MeshStandardMaterialParameters = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.85, ...extra });
+const tmpViewer = new THREE.Vector3();
+
+interface Piece {
+  group: THREE.Object3D;
+  parts: THREE.Mesh[];
+}
 
 export class HomeLevel implements Level {
   readonly id = "home" as const;
@@ -36,12 +98,11 @@ export class HomeLevel implements Level {
   readonly interacts: LevelInteract[] = [];
   readonly triggers = [];
   readonly buoys = [];
+  readonly gloom = [];
   readonly points = new Map<string, THREE.Vector3>();
   readonly lighthouse = new Lighthouse();
 
   private readonly M = {
-    grass: mat(0x5b6b47),
-    path: mat(0x8a7d62),
     rock: mat(0x8d8a80, { flatShading: true }),
     stone: mat(0xc9c3b5),
     timber: mat(0x6b4f3a),
@@ -49,22 +110,43 @@ export class HomeLevel implements Level {
     roof: mat(0x3d4a52),
     iron: mat(0x2b2f33, { metalness: 0.5, roughness: 0.6 }),
     seabed: mat(0x3a4a42),
+    cliff: mat(0x7e7b73, { flatShading: true }),
     windowDark: mat(0x1a1f24, { roughness: 0.3 }),
     windowLit: new THREE.MeshStandardMaterial({ color: 0xffd08a, emissive: 0xffb347, emissiveIntensity: 1.6 }),
     ember: new THREE.MeshStandardMaterial({ color: 0x331a0a, emissive: 0xff7a1a, emissiveIntensity: 0 }),
+    coals: new THREE.MeshStandardMaterial({ color: 0x331a0a, emissive: 0xff7a1a, emissiveIntensity: 1.4 }),
     lantern: new THREE.MeshStandardMaterial({ color: 0xffd08a, emissive: 0xffb347, emissiveIntensity: 2 }),
     invisible: new THREE.MeshBasicMaterial({ visible: false }),
   };
   /** Always-solid meshes. */
   private readonly solids: THREE.Mesh[] = [];
-  private readonly windows: THREE.Mesh[] = [];
+  private windows: THREE.Mesh[] = [];
   private readonly dockMissing: THREE.Mesh[] = [];
+  private readonly planks: THREE.Mesh[] = [];
+  private readonly piles: THREE.Mesh[] = [];
   private readonly npcBodies = new Map<NpcId, THREE.Mesh>();
   private readonly familyGroup = new THREE.Group();
+  private readonly familyBodies: THREE.Mesh[] = [];
+  /** People, once their models arrive from Polyfork's CDN. */
+  private readonly villagers: { v: Villager; group: THREE.Object3D }[] = [];
   private readonly forgeGlow: THREE.PointLight;
   private readonly hearthLight: THREE.PointLight;
   private readonly boats: THREE.Group[] = [];
   private readonly smoke: THREE.Mesh[] = [];
+  private readonly smokeFrom = new THREE.Vector3(-16 + 1.2, CLIFF_TOP + 6, -6 + 0.6);
+  private readonly cliffSides: THREE.Mesh;
+  private readonly rimRocks: { mesh: THREE.Mesh; size: number }[] = [];
+  private readonly door: THREE.Mesh;
+  private readonly hearth: Piece;
+  private readonly chest: Piece;
+  private readonly forge: Piece;
+  private readonly cottages: Piece[] = [];
+  private readonly tidePoles: Piece[] = [];
+  private readonly posts: { piece: Piece; light: THREE.PointLight }[] = [];
+  private readonly sign: Piece;
+  /** Broken and repaired forge models, once dressed. */
+  private forgeModels: [THREE.Object3D, THREE.Object3D] | null = null;
+  private dressed = false;
   private dockFixed = false;
   private boatsVisible = 1;
 
@@ -73,30 +155,22 @@ export class HomeLevel implements Level {
     const M = this.M;
     this.root.name = "home";
 
-    // Headland: always-dry rock (top y=3 > 2.4 dry band).
-    const headland = new THREE.Mesh(new THREE.CylinderGeometry(46, 52, 12, 64), M.grass);
+    // Headland: always-dry rock (top y=3 > 2.4 dry band). The solid cylinder is
+    // collision only; the painted grass top and the cliff faces are what you see.
+    const headland = new THREE.Mesh(new THREE.CylinderGeometry(RADIUS, 52, 12, 64), M.invisible);
     headland.position.y = CLIFF_TOP - 6;
-    this.add(headland, true);
+    this.root.add(headland);
+    this.solids.push(headland);
+    this.cliffSides = new THREE.Mesh(new THREE.CylinderGeometry(RADIUS, 52, 12, 64, 1, true), M.cliff);
+    this.cliffSides.position.y = CLIFF_TOP - 6;
+    this.cliffSides.receiveShadow = true;
+    this.root.add(this.cliffSides);
+    this.root.add(headlandTop(RADIUS, CLIFF_TOP, PATHS, WORN));
 
     const seabed = new THREE.Mesh(new THREE.PlaneGeometry(700, 700), M.seabed);
     seabed.rotation.x = -Math.PI / 2;
     seabed.position.y = -5;
     this.add(seabed, true);
-
-    // Worn paths between the lighthouse, the square, the dock and the cliff path.
-    for (const [x1, z1, x2, z2] of [
-      [22, -15, 2, 0],
-      [2, 0, 6, 44],
-      [-4, 4, -40, 8],
-    ] as const) {
-      const len = Math.hypot(x2 - x1, z2 - z1);
-      const p = new THREE.Mesh(new THREE.PlaneGeometry(2.6, len), M.path);
-      p.rotation.x = -Math.PI / 2;
-      p.rotation.z = Math.atan2(x2 - x1, z2 - z1);
-      p.position.set((x1 + x2) / 2, CLIFF_TOP + 0.02, (z1 + z2) / 2);
-      p.receiveShadow = true;
-      this.root.add(p);
-    }
 
     // Cliff rocks around the rim (kept clear of the dock mouth and the cliff path).
     for (let i = 0; i < 70; i++) {
@@ -110,30 +184,35 @@ export class HomeLevel implements Level {
       if (rock.position.x < -30 && Math.abs(rock.position.z - 8) < 6) continue;
       rock.castShadow = rock.receiveShadow = true;
       this.root.add(rock);
+      this.rimRocks.push({ mesh: rock, size: s });
     }
 
     // Lighthouse.
     this.lighthouse.group.position.set(22, CLIFF_TOP, -20);
     this.root.add(this.lighthouse.group);
     this.solidCylinder(22, -20, 3.8, CLIFF_TOP, 30);
-    const door = new THREE.Mesh(new THREE.BoxGeometry(1.4, 2.4, 0.3), M.timber);
-    door.position.set(22, CLIFF_TOP + 1.2, -16.25);
-    this.root.add(door);
-    this.interacts.push({ id: "lamp", object: door, range: 3.6 });
+    this.door = new THREE.Mesh(new THREE.BoxGeometry(1.4, 2.4, 0.3), M.timber);
+    this.door.position.set(22, CLIFF_TOP + 1.2, -16.25);
+    this.root.add(this.door);
+    this.interacts.push({ id: "lamp", object: this.door, range: 3.6 });
 
     // Square: hearth + storage within 10 m (quick prep).
     const hearth = new THREE.Group();
+    const hearthParts: THREE.Mesh[] = [];
     for (let i = 0; i < 9; i++) {
       const a = (i / 9) * Math.PI * 2;
       const s = new THREE.Mesh(new THREE.DodecahedronGeometry(0.35, 0), M.rock);
       s.position.set(Math.cos(a) * 0.9, 0.2, Math.sin(a) * 0.9);
       hearth.add(s);
+      hearthParts.push(s);
     }
-    const coals = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, 0.15, 12), new THREE.MeshStandardMaterial({ color: 0x331a0a, emissive: 0xff7a1a, emissiveIntensity: 1.4 }));
+    const coals = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, 0.15, 12), M.coals);
     coals.position.y = 0.1;
     hearth.add(coals);
+    hearthParts.push(coals);
     hearth.position.set(0, CLIFF_TOP, 2);
     this.root.add(hearth);
+    this.hearth = { group: hearth, parts: hearthParts };
     this.solidCylinder(0, 2, 1.1, CLIFF_TOP, CLIFF_TOP + 0.6);
     this.hearthLight = new THREE.PointLight(0xff9a40, 25, 14, 1.6);
     this.hearthLight.position.set(0, CLIFF_TOP + 1.2, 2);
@@ -146,17 +225,11 @@ export class HomeLevel implements Level {
     const lid = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.12, 0.9), M.timber);
     lid.position.set(-4, CLIFF_TOP + 0.86, -1);
     this.root.add(lid);
+    this.chest = { group: this.root, parts: [chest, lid] };
     this.interacts.push({ id: "storage", object: chest, range: 3.6 });
 
-    // Cottages, two windows each. Windows light in order as the stage rises.
-    const cottages: [number, number, number][] = [
-      [-16, -6, 0.3],
-      [-26, 10, -0.4],
-      [-8, -24, 0.1],
-      [-30, -14, 0.8],
-      [-14, 22, -0.2],
-    ];
-    for (const [x, z, rot] of cottages) this.cottage(x, z, rot);
+    // Cottages, two windows each.
+    for (const [x, z, rot] of COTTAGES) this.cottages.push(this.cottage(x, z, rot));
 
     // Forge (broken → repaired).
     const forge = new THREE.Group();
@@ -173,6 +246,7 @@ export class HomeLevel implements Level {
     forge.traverse((o) => (o.castShadow = o.receiveShadow = true));
     this.root.add(forge);
     this.solids.push(base);
+    this.forge = { group: forge, parts: [base, chimney, mouth, anvil] };
     this.forgeGlow = new THREE.PointLight(0xff7a1a, 0, 10, 1.8);
     this.forgeGlow.position.set(12, CLIFF_TOP + 1, 8.2);
     this.root.add(this.forgeGlow);
@@ -185,7 +259,8 @@ export class HomeLevel implements Level {
       plank.position.set(DOCK_X, DOCK_Y - 0.075, 45 + i);
       plank.castShadow = plank.receiveShadow = true;
       this.root.add(plank);
-      if ([9, 10, 11, 18, 19].includes(i)) this.dockMissing.push(plank);
+      this.planks.push(plank);
+      if (MISSING_PLANKS.includes(i)) this.dockMissing.push(plank);
       else this.solids.push(plank);
     }
     for (let i = 0; i < 8; i++) {
@@ -193,6 +268,7 @@ export class HomeLevel implements Level {
         const pile = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.22, 8, 8), M.timber);
         pile.position.set(DOCK_X + side, DOCK_Y - 4, 46 + i * 4);
         this.root.add(pile);
+        this.piles.push(pile);
       }
     }
 
@@ -205,21 +281,10 @@ export class HomeLevel implements Level {
     this.interacts.push({ id: "boat", object: this.boats[0]!, range: 4.5 });
 
     // Tide poles beside the dock: bands at low (white), mid (yellow), high (red).
-    this.tidePole(DOCK_X - 3, 52);
-    this.tidePole(DOCK_X + 4, 62);
+    this.tidePoles.push(this.tidePole(DOCK_X - 3, 52), this.tidePole(DOCK_X + 4, 62));
 
     // Lantern posts along the paths.
-    for (const [x, z] of [
-      [16, -10],
-      [6, -2],
-      [4, 14],
-      [5, 28],
-      [7.8, 40],
-      [-24, 6],
-      [-38, 5],
-    ] as const) {
-      this.lanternPost(x, z);
-    }
+    for (const [x, z] of LANTERN_POSTS) this.posts.push(this.lanternPost(x, z));
 
     // Cliff path down to Gullwash Shore: a signpost at the west edge.
     const sign = new THREE.Group();
@@ -232,6 +297,7 @@ export class HomeLevel implements Level {
     sign.rotation.y = Math.PI / 2;
     sign.traverse((o) => (o.castShadow = true));
     this.root.add(sign);
+    this.sign = { group: sign, parts: [post, board] };
     this.solidCylinder(-41, 11, 0.2, CLIFF_TOP, CLIFF_TOP + 2.2);
     this.interacts.push({ id: "path_shore", object: sign, range: 3.6 });
 
@@ -251,6 +317,7 @@ export class HomeLevel implements Level {
       body.position.set(x, CLIFF_TOP + h / 2 + 0.3, z);
       body.castShadow = true;
       this.familyGroup.add(body);
+      this.familyBodies.push(body);
     }
     this.root.add(this.familyGroup);
 
@@ -269,10 +336,241 @@ export class HomeLevel implements Level {
     this.collider = this.buildCollider();
   }
 
+  /**
+   * Lays the Blender models over the greybox: home.glb's buildings, dock, boats,
+   * cliff and rocks, props.glb's posts, sign, tide poles and grass. Each greybox
+   * part keeps its place as collision (and as the raycast target for its
+   * interaction) but stops drawing. COL_ boxes in the models become solid.
+   */
+  dress(assets: Assets): void {
+    if (this.dressed) return;
+    this.dressed = true;
+    const home = (name: string) => assets.clone("home.glb", name);
+
+    const tower = home("HOME_lighthouse");
+    if (tower) {
+      this.lighthouse.dress(tower);
+      this.hide(this.door);
+    }
+
+    const cliff = home("HOME_cliff");
+    if (cliff) {
+      this.root.add(cliff);
+      this.cliffSides.visible = false;
+    }
+    this.rimRocks.forEach(({ mesh, size }, i) => {
+      const rock = home(`HOME_rock_${i % 6}`);
+      if (!rock) return;
+      rock.position.copy(mesh.position);
+      rock.rotation.y = mesh.rotation.y * 2.1;
+      rock.scale.setScalar(size * 1.05);
+      this.root.add(rock);
+      mesh.visible = false;
+    });
+
+    const hearth = home("HOME_hearth");
+    if (hearth) {
+      this.hide(...this.hearth.parts);
+      this.hearth.group.add(hearth);
+      this.swapMaterial(hearth, "EMBER", this.M.coals);
+      this.takeCollision(hearth);
+    }
+    const chest = home("HOME_chest");
+    if (chest) {
+      this.hide(...this.chest.parts);
+      chest.position.set(-4, CLIFF_TOP, -1);
+      this.root.add(chest);
+    }
+
+    const panes: THREE.Mesh[] = [];
+    this.cottages.forEach((c, i) => {
+      const model = home(COTTAGE_MODELS[i % COTTAGE_MODELS.length]!);
+      if (!model) return;
+      this.hide(...c.parts);
+      c.group.add(model);
+      this.takeCollision(model);
+      const mine: THREE.Mesh[] = [];
+      model.traverse((o) => {
+        if (o.name.startsWith("window") && (o as THREE.Mesh).isMesh) mine.push(o as THREE.Mesh);
+      });
+      mine.sort((a, b) => a.position.x - b.position.x);
+      panes.push(...mine);
+      if (i === 0) model.getObjectByName("smoke")?.getWorldPosition(this.smokeFrom);
+    });
+    if (panes.length === this.windows.length) this.windows = panes;
+
+    const forgeOn = home("HOME_forge");
+    const forgeOff = home("HOME_forge_broken");
+    if (forgeOn && forgeOff) {
+      this.hide(...this.forge.parts);
+      for (const f of [forgeOn, forgeOff]) {
+        this.swapMaterial(f, "EMBER", this.M.ember);
+        this.forge.group.add(f);
+      }
+      this.takeCollision(forgeOn);
+      this.takeCollision(forgeOff, false);
+      this.forgeModels = [forgeOff, forgeOn];
+    }
+
+    this.planks.forEach((p, i) => {
+      const board = home(MISSING_PLANKS.includes(i) ? "HOME_dock_plank_new" : `HOME_dock_plank_${i % 3}`);
+      if (!board) return;
+      this.hide(p);
+      board.rotation.y = (i % 2) * Math.PI;
+      p.add(board);
+    });
+    const frame = home("HOME_dock_frame");
+    if (frame) {
+      frame.position.x = DOCK_X;
+      this.root.add(frame);
+      for (const pile of this.piles) pile.visible = false;
+    }
+    for (const b of this.boats) {
+      const boat = home("HOME_sailboat");
+      if (!boat) break;
+      for (const c of [...b.children]) if ((c as THREE.Mesh).isMesh) this.hide(c as THREE.Mesh);
+      b.add(boat);
+    }
+
+    for (const t of this.tidePoles) {
+      const pole = assets.prop("tide_pole");
+      if (!pole) break;
+      for (const m of t.parts) m.visible = false;
+      pole.position.set(t.parts[0]!.position.x, 0, t.parts[0]!.position.z);
+      this.root.add(pole);
+    }
+    this.posts.forEach(({ piece, light }, i) => {
+      const post = assets.prop("lantern_post");
+      if (!post) return;
+      const [stem, lamp] = piece.parts as [THREE.Mesh, THREE.Mesh];
+      this.hide(stem);
+      lamp.visible = false;
+      const yaw = (i * 2.3) % (Math.PI * 2);
+      post.position.set(stem.position.x, CLIFF_TOP, stem.position.z);
+      post.rotation.y = yaw;
+      this.root.add(post);
+      // The prop's lantern hangs 0.5 m out along its arm, 1.9 m up.
+      light.position.set(stem.position.x + Math.cos(yaw) * 0.5, CLIFF_TOP + 1.9, stem.position.z - Math.sin(yaw) * 0.5);
+    });
+    const sign = assets.prop("signpost");
+    if (sign) {
+      this.hide(...this.sign.parts);
+      this.sign.group.add(sign);
+    }
+    this.scatterGrass(assets);
+    this.loadVillagers();
+
+    this.root.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (m.isMesh && m.material !== this.M.invisible) m.castShadow = m.receiveShadow = true;
+    });
+    this.collider = this.buildCollider();
+
+    // Everything progression or time touches stays separate; the rest of the village is merged.
+    const live = new Set<THREE.Object3D>([...this.windows, ...this.dockMissing, ...this.boats, ...this.smoke, this.familyGroup, this.lighthouse.group, this.door]);
+    if (this.forgeModels) for (const f of this.forgeModels) live.add(f);
+    for (const body of this.npcBodies.values()) live.add(body.parent!);
+    for (const it of this.interacts) live.add(it.object);
+    batchStatic(this.root, (o) => live.has(o));
+  }
+
   private add(mesh: THREE.Mesh, solid: boolean): void {
     mesh.castShadow = mesh.receiveShadow = true;
     this.root.add(mesh);
     if (solid) this.solids.push(mesh);
+  }
+
+  /** Stops a greybox mesh drawing (and casting shadows); it stays collision and a raycast target. */
+  private hide(...meshes: THREE.Mesh[]): void {
+    for (const m of meshes) {
+      m.material = this.M.invisible;
+      m.castShadow = m.receiveShadow = false;
+    }
+  }
+
+  private swapMaterial(root: THREE.Object3D, name: string, to: THREE.Material): void {
+    root.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      if (Array.isArray(m.material)) m.material = m.material.map((x) => (x.name === name ? to : x));
+      else if (m.material.name === name) m.material = to;
+    });
+  }
+
+  /** A model's COL_ boxes stop drawing; with solid, they join the collision. */
+  private takeCollision(model: THREE.Object3D, solid = true): void {
+    model.traverse((o) => {
+      if (!o.name.startsWith("COL_")) return;
+      o.traverse((c) => {
+        const m = c as THREE.Mesh;
+        if (!m.isMesh) return;
+        this.hide(m);
+        if (solid) this.solids.push(m);
+      });
+    });
+  }
+
+  /**
+   * Swaps the placeholder figures for Polyfork villagers as they arrive from the
+   * CDN (src/data/villagers.ts). A capsule stays behind, invisible, as the
+   * NPC's collision and the target you talk to.
+   */
+  private loadVillagers(): void {
+    for (const [id, body] of this.npcBodies) {
+      const group = body.parent!;
+      void Villager.load(NPC_LOOKS[id]).then((v) => {
+        if (!v) return;
+        for (const c of group.children) if ((c as THREE.Mesh).isMesh) this.hide(c as THREE.Mesh);
+        group.add(v.object);
+        this.villagers.push({ v, group });
+      });
+    }
+    FAMILY_LOOKS.forEach((look, i) => {
+      const body = this.familyBodies[i];
+      if (!body) return;
+      void Villager.load(look).then((v) => {
+        if (!v) return;
+        this.hide(body);
+        const spot = new THREE.Group();
+        spot.position.set(body.position.x, CLIFF_TOP, body.position.z);
+        spot.add(v.object);
+        this.familyGroup.add(spot);
+        this.villagers.push({ v, group: spot });
+      });
+    });
+  }
+
+  /** Grass tufts on the open turf (instanced), thicker and taller toward the cliff edge. */
+  private scatterGrass(assets: Assets): void {
+    const src = assets.prop("dune_grass");
+    if (!src) return;
+    const r = rng(11);
+    const mats: THREE.Matrix4[] = [];
+    const q = new THREE.Quaternion();
+    const e = new THREE.Euler();
+    for (let tries = 0; tries < 1400 && mats.length < 320; tries++) {
+      const a = r() * Math.PI * 2;
+      const d = Math.sqrt(r()) * (RADIUS - 1);
+      const x = Math.cos(a) * d;
+      const z = Math.sin(a) * d;
+      if (CLEAR.some(([cx, cz, cr]) => Math.hypot(x - cx, z - cz) < cr)) continue;
+      if (wear(x, z, PATHS, WORN) > 0.15) continue;
+      const edge = Math.max(0, (d - 36) / 10);
+      if (r() > 0.35 + edge * 0.65) continue;
+      const s = 0.35 + r() * 0.3 + edge * 0.5;
+      q.setFromEuler(e.set(0, r() * Math.PI * 2, 0));
+      mats.push(new THREE.Matrix4().compose(new THREE.Vector3(x, CLIFF_TOP, z), q, new THREE.Vector3(s, s * (0.8 + r() * 0.4), s)));
+    }
+    src.updateWorldMatrix(true, true);
+    src.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      const inst = new THREE.InstancedMesh(m.geometry, m.material, mats.length);
+      mats.forEach((mx, i) => inst.setMatrixAt(i, mx.clone().multiply(m.matrixWorld)));
+      inst.receiveShadow = true;
+      inst.name = "grass";
+      this.root.add(inst);
+    });
   }
 
   /** Invisible collision cylinder (lighthouse, hearth ring, posts). */
@@ -283,7 +581,7 @@ export class HomeLevel implements Level {
     this.solids.push(c);
   }
 
-  private cottage(x: number, z: number, rot: number): void {
+  private cottage(x: number, z: number, rot: number): Piece {
     const M = this.M;
     const g = new THREE.Group();
     const body = new THREE.Mesh(new THREE.BoxGeometry(6, 3.2, 5), M.stone);
@@ -294,23 +592,27 @@ export class HomeLevel implements Level {
     const door = new THREE.Mesh(new THREE.PlaneGeometry(1, 1.9), M.timber);
     door.position.set(0, 0.95, 2.51);
     g.add(body, roof, door);
+    const parts = [body, roof, door];
     for (const wx of [-1.9, 1.9]) {
       const w = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 1), M.windowDark);
       w.position.set(wx, 1.9, 2.51);
       g.add(w);
       this.windows.push(w);
+      parts.push(w);
     }
     g.position.set(x, CLIFF_TOP, z);
     g.rotation.y = rot;
     g.traverse((o) => (o.castShadow = o.receiveShadow = true));
     this.root.add(g);
     this.solids.push(body);
+    return { group: g, parts };
   }
 
-  private tidePole(x: number, z: number): void {
+  private tidePole(x: number, z: number): Piece {
     const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 8, 8), this.M.timber);
     pole.position.set(x, -0.5, z);
     this.root.add(pole);
+    const parts = [pole];
     for (const [y, c] of [
       [0, 0xe8e4da],
       [0.9, 0xe0b040],
@@ -319,10 +621,12 @@ export class HomeLevel implements Level {
       const band = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.18, 8), mat(c));
       band.position.set(x, y, z);
       this.root.add(band);
+      parts.push(band);
     }
+    return { group: this.root, parts };
   }
 
-  private lanternPost(x: number, z: number): void {
+  private lanternPost(x: number, z: number): { piece: Piece; light: THREE.PointLight } {
     const post = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 2.4, 6), this.M.iron);
     post.position.set(x, CLIFF_TOP + 1.2, z);
     const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.4, 0.3), this.M.lantern);
@@ -332,6 +636,7 @@ export class HomeLevel implements Level {
     const light = new THREE.PointLight(0xffb347, 6, 9, 1.8);
     light.position.copy(lamp.position);
     this.root.add(light);
+    return { piece: { group: this.root, parts: [post, lamp] }, light };
   }
 
   private npc(id: NpcId, color: number, x: number, z: number): void {
@@ -378,6 +683,10 @@ export class HomeLevel implements Level {
     const forgeLit = projects.includes("forge");
     M.ember.emissiveIntensity = forgeLit ? 2.2 : 0;
     this.forgeGlow.intensity = forgeLit ? 14 : 0;
+    if (this.forgeModels) {
+      this.forgeModels[0].visible = !forgeLit;
+      this.forgeModels[1].visible = forgeLit;
+    }
     this.dockFixed = projects.includes("dock");
     for (const p of this.dockMissing) p.visible = this.dockFixed;
     for (const [id, body] of this.npcBodies) {
@@ -401,11 +710,18 @@ export class HomeLevel implements Level {
       b.position.y = u.waterY + Math.sin(u.time * 1.3 + i) * 0.08;
       b.rotation.z = Math.sin(u.time * 0.9 + i * 2) * 0.04;
     });
-    this.hearthLight.intensity = 22 + Math.sin(u.time * 9) * 3 + Math.sin(u.time * 23) * 2;
-    // Chimney smoke above the first cottage.
+    for (const { v, group } of this.villagers) {
+      if (!group.visible || !group.parent?.visible) continue;
+      v.update(u.dt, u.time, group.worldToLocal(tmpViewer.copy(u.viewer)));
+    }
+    const flicker = Math.sin(u.time * 9) * 3 + Math.sin(u.time * 23) * 2;
+    this.hearthLight.intensity = 22 + flicker;
+    this.M.coals.emissiveIntensity = 1.4 + flicker * 0.06;
+    // Chimney smoke above Odile's cottage.
+    const from = this.smokeFrom;
     this.smoke.forEach((s, i) => {
       const t = (u.time * 0.25 + i / this.smoke.length) % 1;
-      s.position.set(-16 + 1.2 + t * 1.5, CLIFF_TOP + 6 + t * 5, -6 + 0.6 + t * 0.8);
+      s.position.set(from.x + t * 1.5, from.y + t * 5, from.z + t * 0.8);
       s.scale.setScalar(0.6 + t * 1.6);
     });
   }

@@ -2,12 +2,16 @@ import * as THREE from "three";
 import type { Assets } from "../core/Assets";
 import { ENEMY_IDS, NODE_IDS, type EnemyId, type LocationId, type NodeId, type TideReq } from "../data/ids";
 import { StaticCollider } from "../physics/StaticCollider";
-import type { Buoy, EnemyMarker, Level, LevelInteract, LevelUpdate, NodeMarker, Trigger } from "./Level";
+import { batchStatic, collapseMaterials, type BatchResult } from "./Batch";
+import type { Buoy, EnemyMarker, GloomMarker, Level, LevelInteract, LevelUpdate, NodeMarker, Trigger } from "./Level";
 import { updateBuoys } from "./Level";
 import { patchTideMaterial } from "./TideMaterial";
 
 // Turns a Blender-exported location (.glb) into a Level by reading the object
 // naming conventions in docs/ART_PIPELINE.md.
+
+/** Markers and anything the game moves, hides or lets you use: never merged into the static batch. */
+const LIVE = /^(NODE_|BUOY_|STATE_|INT_|TRIG_|COL_|ENEMY_|SPAWN_|ANCHOR_|FX_|GLOOM_)/;
 
 const isNode = (v: unknown): v is NodeId => typeof v === "string" && (NODE_IDS as readonly string[]).includes(v);
 const isEnemy = (v: unknown): v is EnemyId => typeof v === "string" && (ENEMY_IDS as readonly string[]).includes(v);
@@ -31,10 +35,13 @@ export class GlbLevel implements Level {
   readonly interacts: LevelInteract[] = [];
   readonly triggers: Trigger[] = [];
   readonly buoys: Buoy[] = [];
+  readonly gloom: GloomMarker[] = [];
   readonly points = new Map<string, THREE.Vector3>();
   /** Objects shown or hidden by progression (STATE_<flag>_<on|off>). */
   readonly stateObjects: { flag: string; on: boolean; object: THREE.Object3D }[] = [];
   private colMeshes: THREE.Mesh[] = [];
+  /** The merged static scenery (see Batch.ts). */
+  readonly batch: BatchResult;
 
   constructor(
     readonly id: LocationId,
@@ -95,6 +102,8 @@ export class GlbLevel implements Level {
           max: typeof data.max === "number" ? data.max : 10,
           phase: this.buoys.length * 1.7,
         });
+      } else if (name.startsWith("GLOOM_")) {
+        this.gloom.push({ position: world.clone(), radius: typeof data.radius === "number" ? data.radius : 4 });
       } else if (name.startsWith("FX_")) {
         this.points.set(name.slice(3), world.clone());
       } else if (name.startsWith("STATE_")) {
@@ -115,6 +124,10 @@ export class GlbLevel implements Level {
 
     this.colMeshes = col;
     this.collider = new StaticCollider(col);
+    this.batch = batchStatic(this.root, (o) => LIVE.test(o.name) || typeof o.userData.interact === "string");
+    // What can't be merged with the scenery (crates, boats, gates, ladders) still moves as one
+    // piece, so its material split can go.
+    for (const o of [...this.root.children]) if (LIVE.test(o.name) && !o.name.startsWith("COL_")) collapseMaterials(o);
   }
 
   /**
@@ -153,7 +166,8 @@ export class GlbLevel implements Level {
   }
 
   dispose(): void {
-    // Geometry and materials are shared with the cached .glb; just detach.
+    // Geometry and materials are shared with the cached .glb; only the merged batch is ours.
+    this.batch.dispose();
     this.root.removeFromParent();
   }
 }

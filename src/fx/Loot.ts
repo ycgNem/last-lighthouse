@@ -33,9 +33,10 @@ export class Loot {
   readonly group = new THREE.Group();
   private readonly sparkles: Sparkle[] = [];
   private readonly pickups: Pickup[] = [];
-  private readonly sparkMat = new THREE.MeshBasicMaterial({ color: FX_COLORS.loot, toneMapped: false });
-  private readonly pickMat = new THREE.MeshBasicMaterial({ color: 0xffe08a, toneMapped: false });
-  private readonly keyMat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
+  // Over-bright so they glow (and bloom) through the tone mapping.
+  private readonly sparkMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(FX_COLORS.loot).multiplyScalar(2) });
+  private readonly pickMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffe08a).multiplyScalar(2) });
+  private readonly keyMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffffff).multiplyScalar(2.4) });
   private readonly haloMat = new THREE.MeshBasicMaterial({ color: 0xffd27a, transparent: true, opacity: 0.25, depthWrite: false, blending: THREE.AdditiveBlending });
 
   /** Visual only: `count` sparkles arc from `from` into the player. */

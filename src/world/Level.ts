@@ -28,6 +28,12 @@ export interface LevelInteract {
   range: number;
 }
 
+/** A Gloom pocket from a GLOOM_ empty: where it hangs and how far it spreads. */
+export interface GloomMarker {
+  position: THREE.Vector3;
+  radius: number;
+}
+
 export interface Trigger {
   event: string;
   box: THREE.Box3;
@@ -50,6 +56,8 @@ export interface LevelUpdate {
   waterY: number;
   /** 0..1 strength of the flood warning glow on tidal surfaces. */
   floodWarning: number;
+  /** Where the player stands (people at home look round at you). */
+  viewer: THREE.Vector3;
 }
 
 export interface Level {
@@ -64,6 +72,7 @@ export interface Level {
   readonly interacts: LevelInteract[];
   readonly triggers: Trigger[];
   readonly buoys: Buoy[];
+  readonly gloom: GloomMarker[];
   /** Named points from FX_<name> empties (e.g. "arena", "home_light", "beacon_lamp"). */
   readonly points: Map<string, THREE.Vector3>;
   update(u: LevelUpdate): void;

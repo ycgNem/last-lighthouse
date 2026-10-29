@@ -12,6 +12,8 @@ import { TIDE } from "../src/data/tide";
 interface GltfNode {
   name?: string;
   extras?: Record<string, unknown>;
+  /** Markers are top-level empties, so this is their world position (glTF is Y-up, like the game). */
+  translation?: [number, number, number];
 }
 
 function nodesOf(id: LocationId): GltfNode[] {
@@ -58,6 +60,23 @@ describe.each(REMOTE)("level %s", (id) => {
       expect(min, n.name).toBeLessThan(max);
       // Reaches its full floating height at high water (rests on its min at low).
       expect(max + 1e-6, n.name).toBeGreaterThanOrEqual(TIDE.highLevel + float);
+    }
+  });
+
+  it("has its Gloom pockets, each with a radius, none over an anchor or the landing", () => {
+    const gloom = named(nodes, "GLOOM_");
+    expect(gloom.length).toBe(LOCATIONS[id].gloom);
+    const pos = (n: GltfNode) => n.translation ?? [0, 0, 0];
+    for (const g of gloom) {
+      const r = Number(extra(g, "radius"));
+      expect(r, g.name).toBeGreaterThan(1);
+      expect(r, g.name).toBeLessThan(6);
+      // The rescue current and the landing must never put you in the Gloom.
+      for (const n of [...named(nodes, "ANCHOR_"), ...named(nodes, "SPAWN_")]) {
+        const [gx, , gz] = pos(g);
+        const [nx, , nz] = pos(n);
+        expect(Math.hypot(gx - nx, gz - nz), `${g.name} vs ${n.name}`).toBeGreaterThan(r + 0.5);
+      }
     }
   });
 

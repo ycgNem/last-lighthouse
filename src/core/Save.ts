@@ -28,8 +28,13 @@ export function deserialize(json: string): GameState {
     raw = m(raw);
     version++;
   }
-  // Fill any fields added since the save was written with new-game defaults.
-  return { ...createNewGame(), ...raw, version: SAVE_VERSION } as GameState;
+  // Fill any fields added since the save was written with new-game defaults
+  // (settings one level down too, so a new option doesn't wipe the old ones).
+  const fresh = createNewGame();
+  const state = { ...fresh, ...raw, version: SAVE_VERSION } as GameState;
+  const settings = typeof raw.settings === "object" && raw.settings !== null ? (raw.settings as Partial<GameState["settings"]>) : {};
+  state.settings = { ...fresh.settings, ...settings, bindings: { ...(settings.bindings ?? {}) } };
+  return state;
 }
 
 export class SaveSystem {

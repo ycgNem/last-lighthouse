@@ -6,3 +6,4 @@ dist/
 Thumbs.db
 .previews/
 .claude/settings.local.json
+__pycache__/
