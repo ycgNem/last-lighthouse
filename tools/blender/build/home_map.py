@@ -44,7 +44,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
 
 import kit  # noqa: E402
-from kit import MB, Paint, fbm3, lerp, noise2, seg_dist, smoothstep  # noqa: E402
+from kit import MB, Paint, along, facing, fbm3, lerp, look, mix, noise2, pave, poly_sd, seg_dist, smax, smoothstep, turn  # noqa: E402
 
 kit.reset()
 
@@ -71,37 +71,6 @@ SEA_ROCK_GAP = 1.8  # the least water between a sea rock and the shore
 KC = (33.0, -35.0)  # the knoll's centre
 TOWER = (34.0, -37.0)
 TOWER_YAW = -0.983  # its door faces the square
-
-
-def smax(a, b, k):
-    """Smooth max: the larger of two heights, rounded over where they're within k of each other."""
-    h = max(k - abs(a - b), 0.0) / k
-    return max(a, b) + h * h * k * 0.25
-
-
-def mix(a, b, t):
-    t = max(0.0, min(1.0, t))
-    out = 0
-    for sh in (16, 8, 0):
-        ca, cb = (a >> sh) & 255, (b >> sh) & 255
-        out |= int(round(ca + (cb - ca) * t)) << sh
-    return out
-
-
-def turn(yaw, lx, lz):
-    """A local (x, z) offset turned by yaw, the way three.js turns rotation.y."""
-    c, s = math.cos(yaw), math.sin(yaw)
-    return lx * c + lz * s, -lx * s + lz * c
-
-
-def facing(dx, dz):
-    """The yaw that turns a model's front (+Z) toward (dx, dz)."""
-    return math.atan2(dx, dz)
-
-
-def look(dx, dz):
-    """The yaw for a spawn whose view looks toward (dx, dz) (a camera looks down its -Z)."""
-    return math.atan2(-dx, -dz)
 
 
 # ------------------------------------------------------------------ layout
@@ -175,34 +144,6 @@ def in_rect(x, z, r, pad=0.0):
 
 
 # ---------------------------------------------------------------- terrain
-
-
-def poly_sd(px, pz, poly):
-    """Signed distance to a closed polygon (negative inside) and the nearest edge."""
-    best, edge, inside = 1e9, 0, False
-    n = len(poly)
-    for i in range(n):
-        ax, az = poly[i]
-        bx, bz = poly[(i + 1) % n]
-        d = seg_dist(px, pz, ax, az, bx, bz)
-        if d < best:
-            best, edge = d, i
-        if (az > pz) != (bz > pz) and px < ax + (pz - az) * (bx - ax) / (bz - az):
-            inside = not inside
-    return (-best if inside else best), edge
-
-
-def along(px, pz, pts):
-    """Nearest point on a polyline of (x, z, y): its distance, its y and how far along (segments)."""
-    best = (1e9, 0.0, 0.0)
-    for i, ((ax, az, ay), (bx, bz, by)) in enumerate(zip(pts, pts[1:])):
-        dx, dz = bx - ax, bz - az
-        L2 = dx * dx + dz * dz
-        t = max(0.0, min(1.0, ((px - ax) * dx + (pz - az) * dz) / L2)) if L2 else 0.0
-        d = math.hypot(px - ax - t * dx, pz - az - t * dz)
-        if d < best[0]:
-            best = (d, ay + (by - ay) * t, i + t)
-    return best
 
 
 def profile(z):
@@ -410,109 +351,11 @@ kit.terrain("terrain", -66, 62, -72, 90, 1.0, H, color, ground, props={"col": 1}
 
 
 # ------------------------------------------------------------------- walls
-# Mortared stone: a dark mortar face with coursed stones a little proud of it,
-# coping slabs over the top. Every wall has a plain collision box behind its
-# face, so the terrain's one-metre step under it never decides where you stop.
 
 STONE = P["stone"].mat
-MORTAR = Paint(STONE, 0x57524A)
-COURSED = [Paint(STONE, c) for c in (0x9C968A, 0x8E887C, 0xA7A194, 0x857F73, 0x948C7C, 0xACA596)]
-COPING = [Paint(STONE, c) for c in (0xB4AEA1, 0xA8A294, 0xBDB7A9)]
 FLAGS = [Paint(STONE, c) for c in (0x8F897D, 0x9C9588, 0x857F74, 0xA49D8F, 0x7D776C)]
-
-walls = MB(900)
-solids = MB(901)
-
-
-def wall_face(m, a, b, out, foot, top, rng):
-    """Coursed stone on a vertical face from a to b (x, z). `out` is the face's
-    outward normal (x, z); foot and top are heights at a and at b."""
-    (ax, az), (bx, bz) = a, b
-    L = math.hypot(bx - ax, bz - az)
-    ux, uz = (bx - ax) / L, (bz - az) / L
-    if -uz * out[0] + ux * out[1] < 0:  # walk the face the way that makes its quads look out
-        (ax, az), (bx, bz), ux, uz = (bx, bz), (ax, az), -ux, -uz
-        foot, top = (foot[1], foot[0]), (top[1], top[0])
-    nx, nz = out
-
-    def pt(s, y, pro):
-        return (ax + ux * s + nx * pro, y, az + uz * s + nz * pro)
-
-    def lo(s):
-        return lerp(foot[0], foot[1], s / L)
-
-    def hi(s):
-        return lerp(top[0], top[1], s / L)
-
-    m.quad([pt(0, lo(0), 0), pt(L, lo(L), 0), pt(L, hi(L), 0), pt(0, hi(0), 0)], mat=MORTAR, jit=0.03)
-    y0 = min(foot)
-    while y0 < max(top) - 0.05:
-        ch = 0.28 + rng.random() * 0.17
-        s = -rng.random() * 0.6
-        while s < L:
-            sl = 0.45 + rng.random() * 0.75
-            s0, s1 = max(0.0, s) + 0.022, min(L, s + sl) - 0.022
-            s += sl
-            if s1 - s0 < 0.12:
-                continue
-            b0, b1 = max(y0 + 0.022, lo(s0)), max(y0 + 0.022, lo(s1))
-            t0, t1 = min(y0 + ch - 0.022, hi(s0) - 0.03), min(y0 + ch - 0.022, hi(s1) - 0.03)
-            if t0 - b0 < 0.06 or t1 - b1 < 0.06:
-                continue
-            pro = 0.012 + rng.random() * 0.03
-            m.quad([pt(s0, b0, pro), pt(s1, b1, pro), pt(s1, t1, pro), pt(s0, t0, pro)], mat=COURSED[int(rng.random() * len(COURSED))], jit=0.06, tint=0.82 + 0.3 * rng.random())
-        y0 += ch
-
-
-def piece(m, p, q, h, depth, mat, tint=1.0):
-    """A slab from game point p to q (its top edge's centre line), h thick, depth across."""
-    dx, dy, dz = q[0] - p[0], q[1] - p[1], q[2] - p[2]
-    m.box((math.hypot(dx, dz), h, depth), at=((p[0] + q[0]) / 2, (p[1] + q[1]) / 2 - h / 2, (p[2] + q[2]) / 2), mat=mat,
-          yaw=math.atan2(-dz, dx), roll=math.atan2(dy, math.hypot(dx, dz)), centered=True, bev=0, tint=tint)
-
-
-def coping(m, a, b, out, top, back, rng, over=0.07, thick=0.16):
-    """Coping slabs along a wall's top from a to b, from `back` behind the face to `over` in front."""
-    (ax, az), (bx, bz) = a, b
-    L = math.hypot(bx - ax, bz - az)
-    ux, uz = (bx - ax) / L, (bz - az) / L
-    c = (over - back) / 2
-    s = 0.0
-    while s < L - 0.05:
-        sl = min(0.7 + rng.random() * 0.5, L - s)
-        p = (ax + ux * s + out[0] * c, lerp(top[0], top[1], s / L), az + uz * s + out[1] * c)
-        q = (ax + ux * (s + sl - 0.02) + out[0] * c, lerp(top[0], top[1], (s + sl - 0.02) / L), az + uz * (s + sl - 0.02) + out[1] * c)
-        piece(m, p, q, thick, back + over, COPING[int(rng.random() * len(COPING))], tint=0.85 + 0.25 * rng.random())
-        s += sl
-
-
-def solid(a, b, out, foot, top, back):
-    """The collision behind a wall face: a box hung from its top edge, deep enough to reach its foot."""
-    (ax, az), (bx, bz) = a, b
-    h = max(top[0] - foot[0], top[1] - foot[1]) + 0.3
-    p = (ax - out[0] * back / 2, top[0], az - out[1] * back / 2)
-    q = (bx - out[0] * back / 2, top[1], bz - out[1] * back / 2)
-    piece(solids, p, q, h, back, P["tar"])
-
-
-def retaining(a, b, out, foot, top, back=0.95, rng=vr):
-    """A retaining wall: face, coping and collision. foot and top are (at a, at b)."""
-    wall_face(walls, a, b, out, foot, top, rng)
-    coping(walls, a, b, out, (top[0] + 0.04, top[1] + 0.04), back + 0.1, rng)
-    solid(a, b, out, foot, (top[0] + 0.04, top[1] + 0.04), back)
-
-
-def parapet(a, b, base, rng=vr, h=0.9, w=0.45):
-    """A free-standing wall on top of another, faced both sides."""
-    (ax, az), (bx, bz) = a, b
-    L = math.hypot(bx - ax, bz - az)
-    nx, nz = (bz - az) / L, -(bx - ax) / L
-    for s in (1, -1):
-        o = (nx * s, nz * s)
-        wall_face(walls, (ax + o[0] * w / 2, az + o[1] * w / 2), (bx + o[0] * w / 2, bz + o[1] * w / 2), o, (base, base), (base + h, base + h), rng)
-    coping(walls, (ax + nx * w / 2, az + nz * w / 2), (bx + nx * w / 2, bz + nz * w / 2), (nx, nz), (base + h + 0.1, base + h + 0.1), w + 0.07, rng, over=0.05, thick=0.12)
-    piece(solids, (ax, base + h + 0.1, az), (bx, base + h + 0.1, bz), h + 0.1, w, P["tar"])
-
+masonry = kit.Masonry(P, vr)
+retaining, parapet = masonry.retaining, masonry.parapet
 
 # The village's wall over the quay, the square's bastion stepping out of it,
 # the ramp's sides turning down from the bastion's front.
@@ -547,35 +390,13 @@ for r, fy in ((JETTY_STEPS, jsteps_y), (WEST_STEPS, wsteps_y)):
     for x, out in ((r[0] - 0.05, (1, 0)), (r[1] + 0.05, (-1, 0))):
         retaining((x, r[2]), (x, FACE_Q), out, (fy(r[2]) - 0.1, fy(FACE_Q) - 0.1), (LT, LT))
 
-walls.build("walls", ao=0.5, ao_dist=0.5, grime=0.25, grime_h=0.8, ground=False)
-solids.build("COL_walls", ao=0, grime=0, ground=False)
+masonry.build("walls", "COL_walls", ao=0.5, ao_dist=0.5, grime=0.25, grime_h=0.8)
 
 
 # ------------------------------------------------------------------ paving
 
 
 COBBLES = [Paint(STONE, c) for c in (0x6F6A61, 0x7B756A, 0x857E72, 0x67625A, 0x8A8376, 0x746B5E)]
-
-
-def pave(m, x0, x1, z0, z1, y_of, rng, row=(0.42, 0.62), width=(0.5, 0.95), keep=None, gap=0.035, lift=0.03, stones=FLAGS):
-    """Stone setts in rows across x, each corner on the ground under it."""
-    z = z0
-    while z < z1 - 0.1:
-        rh = min(row[0] + rng.random() * (row[1] - row[0]), z1 - z)
-        x = x0 - rng.random() * width[0]
-        while x < x1:
-            sw = width[0] + rng.random() * (width[1] - width[0])
-            a, b = max(x0, x) + gap, min(x1, x + sw) - gap
-            c, d = z + gap, z + rh - gap
-            x += sw
-            if b - a < 0.15 or (keep and not keep((a + b) / 2, (c + d) / 2)):
-                continue
-            up = lift + rng.random() * 0.025
-            m.quad([(a, y_of(a, c) + up, c), (a, y_of(a, d) + up, d), (b, y_of(b, d) + up, d), (b, y_of(b, c) + up, c)],
-                   mat=stones[int(rng.random() * len(stones))], jit=0.06, tint=0.78 + 0.34 * rng.random())
-        z += rh
-
-
 setts = MB(910)
 HEARTH = (3.0, -16.0)
 
@@ -588,14 +409,14 @@ def on_square(x, z):
     return edge > 0.6 * (noise2(x * 0.9, z * 0.9, 91) + 0.4)
 
 
-pave(setts, SQUARE[0], SQUARE[1], SQUARE[2], SQUARE[3], lambda x, z: VT, vr, row=(0.36, 0.52), width=(0.4, 0.75), keep=on_square, gap=0.04, stones=COBBLES)
-pave(setts, RAMP[0], RAMP[1], RAMP[2] + 0.1, RAMP[3], lambda x, z: ramp_y(z), vr)
-pave(setts, JETTY_STEPS[0], JETTY_STEPS[1], JETTY_STEPS[2], JETTY_STEPS[3] + 0.2, lambda x, z: jsteps_y(z), vr)
-pave(setts, WEST_STEPS[0], WEST_STEPS[1], WEST_STEPS[2], WEST_STEPS[3] + 0.2, lambda x, z: wsteps_y(z), vr)
+pave(setts, SQUARE[0], SQUARE[1], SQUARE[2], SQUARE[3], lambda x, z: VT, vr, COBBLES, row=(0.36, 0.52), width=(0.4, 0.75), keep=on_square, gap=0.04)
+pave(setts, RAMP[0], RAMP[1], RAMP[2] + 0.1, RAMP[3], lambda x, z: ramp_y(z), vr, FLAGS)
+pave(setts, JETTY_STEPS[0], JETTY_STEPS[1], JETTY_STEPS[2], JETTY_STEPS[3] + 0.2, lambda x, z: jsteps_y(z), vr, FLAGS)
+pave(setts, WEST_STEPS[0], WEST_STEPS[1], WEST_STEPS[2], WEST_STEPS[3] + 0.2, lambda x, z: wsteps_y(z), vr, FLAGS)
 setts.build("setts", ao=0.3, ao_dist=0.3, grime=0.0, ground=False)
 # The slipway runs on down the beach under the tide: wet and weedy below high water.
 slipway = MB(911)
-pave(slipway, SLIP[0], SLIP[1], SLIP[2] - 0.05, 30.0, lambda x, z: H(min(max(x, SLIP[0]), SLIP[1]), z), vr, row=(0.5, 0.7), width=(0.6, 1.1))
+pave(slipway, SLIP[0], SLIP[1], SLIP[2] - 0.05, 30.0, lambda x, z: H(min(max(x, SLIP[0]), SLIP[1]), z), vr, FLAGS, row=(0.5, 0.7), width=(0.6, 1.1))
 slipway.build("slipway", ao=0.3, ao_dist=0.3, grime=0.0, ground=False, tideline=True)
 
 # Kerb stones along the outside of the knoll path.
@@ -613,7 +434,7 @@ for (ax, az, ay), (bx, bz, by) in segs:
     while t < L:
         k = 0.35 + vr.random() * 0.25
         x, z = ax + ux * t + nx * 1.75, az + uz * t + nz * 1.75
-        kerb.box((k, 0.14 + vr.random() * 0.1, 0.32), at=(x, H(x, z) - 0.07, z), mat=COPING[int(vr.random() * len(COPING))], yaw=math.atan2(-uz, ux) + (vr.random() - 0.5) * 0.25, bev=0.02, tint=0.85 + 0.25 * vr.random())
+        kerb.box((k, 0.14 + vr.random() * 0.1, 0.32), at=(x, H(x, z) - 0.07, z), mat=masonry.copings[int(vr.random() * len(masonry.copings))], yaw=math.atan2(-uz, ux) + (vr.random() - 0.5) * 0.25, bev=0.02, tint=0.85 + 0.25 * vr.random())
         t += k + 0.25 + vr.random() * 0.6
 kerb.build("kerb", ao=0.4, ao_dist=0.3, grime=0.2)
 
@@ -707,11 +528,10 @@ for w, run in enumerate(FIELD_WALLS):
 
 # The knoll's top: a dry-stone wall round its seaward side, a bench looking over the village.
 KNOLL_WALL = [(KC[0] + math.cos(math.radians(-160 + k * 24)) * 8.6, KC[1] + math.sin(math.radians(-160 + k * 24)) * 8.6) for k in range(9)]
-walls, solids = MB(921), MB(922)  # parapet() draws into these
+knoll_wall = kit.Masonry(P, vr, seeds=(921, 922))
 for a, b in zip(KNOLL_WALL, KNOLL_WALL[1:]):
-    parapet(a, b, KNOLL - 0.15, h=0.85)
-walls.build("knoll_wall", ao=0.5, ao_dist=0.5, grime=0.25, grime_h=0.6, ground=False)
-solids.build("COL_knoll_wall", ao=0, grime=0, ground=False)
+    knoll_wall.parapet(a, b, KNOLL - 0.15, h=0.85)
+knoll_wall.build("knoll_wall", "COL_knoll_wall", ao=0.5, ao_dist=0.5, grime=0.25, grime_h=0.6)
 BENCH = (KC[0] + math.cos(math.radians(205)) * 8.0, KC[1] + math.sin(math.radians(205)) * 8.0)
 kit.place(T, "decor_bench", "knoll_bench", (BENCH[0], KNOLL, BENCH[1]), yaw=facing(math.cos(math.radians(205)), math.sin(math.radians(205))), props={"col": 1})
 

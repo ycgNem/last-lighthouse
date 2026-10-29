@@ -4,7 +4,7 @@ import { FX_COLORS } from "../fx/Effects";
 import { Enemy, type HitSphere } from "./Enemy";
 
 // Saltmere's guardian: a colossus of fused hulls and chain that rises from the
-// sea beside the beacon rock. Three attacks, all with long tells:
+// sea below the beacon's stack. Three attacks, all with long tells:
 //  * Chain Sweep — the chain arm lifts and a glowing sector shows where it will
 //    sweep. Jump over it or dash through it. Afterwards the heart lantern in
 //    its chest is exposed for two seconds (double damage).

@@ -137,8 +137,8 @@ export class GlbLevel implements Level {
     this.collider = new StaticCollider(col);
     this.batch = batchStatic(this.root, (o) => LIVE.test(o.name) || typeof o.userData.interact === "string");
     // What can't be merged with the scenery (crates, boats, gates, ladders) still moves as one
-    // piece, so its material split can go.
-    for (const o of [...this.root.children]) if (LIVE.test(o.name) && !o.name.startsWith("COL_")) collapseMaterials(o);
+    // piece, so its material split can go (home's plots only by finish: see collapseMaterials()).
+    for (const o of [...this.root.children]) if (LIVE.test(o.name) && !o.name.startsWith("COL_")) collapseMaterials(o, !o.name.startsWith("PLOT_"));
   }
 
   /**

@@ -95,7 +95,7 @@ src/
   combat/Projectiles.ts   pooled bolts, orbs and mortars
   gather/                 Hook (throw, reel, yank; the line), Flotsam (the drift:
                           lanes, sway, beaching, pickup), Wreckage (pieces off
-                          per pull, restock), GatherNode (crates, key items,
+                          per pull, drawn merged, restock), GatherNode (crates, key items,
                           fishing spots), Fishing (cast, bite, catch)
   fx/                     Effects (particles, rings, cones), Loot (sparkles, pickups),
                           Post (bloom), Rain (GPU streaks), sprite (soft dot)
@@ -151,14 +151,20 @@ frame rate holds, then creeps back up (`src/systems/resolution.ts`, tuned by
 (a 50 Hz screen, a 30 fps cap, a busy CPU) is undone.
 
 Draw calls stay under 300 everywhere: `batchStatic()` merges every static mesh
-that shares a material (the originals stay, hidden, so collision and focus rays
-still see them), `collapseMaterials()` folds a rigid model's per-material split
-into one vertex-coloured mesh, and only things near the player cast shadows.
-Home merges its finished buildings the same way each time one stands
+alike in finish, colours baked into vertex colours (the originals stay, hidden,
+so collision and focus rays still see them), `collapseMaterials()` folds a
+rigid model's per-material split into one vertex-coloured mesh, and only things
+near the player cast shadows (creatures, loot, what floats). A place's wrecks
+built in pieces draw merged (`mergePieces()`): each wreck's triangles lie
+together, its pieces first in the order they go, and tearing pieces off
+collapses theirs to a point in the index (a restock writes them back). Home
+merges its finished buildings by material each time one stands
 (`batchMeshes()`), and instanced props (decor, drift) draw their rough plain
-materials as one part (`instanceParts()`): with 50 decor pieces, every kind of
-drift and both families home, the Rest is at about 210–275 (the most with two
-plots still in ruins: a ruin and its board cost more than a finished building).
+materials as one part (`instanceParts()`). The Meridian peaks at about 275 (low
+water, the ambush, all thirteen enemies about you); with every plot built, 50
+decor pieces, the drift in and both families home, the Rest is at about
+175–200 (a ruin and its board cost more than a finished building: with two
+plots in ruins it was at about 275 before scenery merged by finish).
 
 ## Key decisions
 

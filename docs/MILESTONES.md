@@ -149,7 +149,7 @@ economy test **(T)**); every visible change listed in GDD §4C is present.
       dash it, then the heart is exposed), brine mortars with closing rings,
       undertow below half health; leave the arena and it sinks and heals 25%
 - [x] Rubble blocks the stair until the Guardian falls; braziers light
-- [x] Relight → Stage 3 → "Chapter One complete" card; causeway lanterns; free
+- [x] Relight → Stage 3 → "Chapter One complete" card; breakwater lanterns; free
       play continues
 - [ ] A beacon landing on the home chart after the chapter
 
@@ -198,7 +198,8 @@ completion saves and survives reload.
       **(T)**. *The three fresh playthroughs are still to do.*
 - [x] Performance: under 300 draw calls everywhere, every enemy alive (static
       scenery merged by material at load, rigid models folded to vertex colour,
-      shadows only from what's near; the wreck peaks at 296). No image textures
+      shadows only from what's near; the wreck peaked at 296, about 275 since M8's
+      map pass). No image textures
       at all, so the texture budget is just the render targets. Scatter is merged
       rather than instanced, which is what the draw-call budget needed.
       Frame time: one skeleton per villager (bone-texture uploads stalled the
@@ -254,7 +255,19 @@ base you rebuild and decorate.
       pieces (about 1.5 ms of CPU a frame and 210–275 draw calls, once finished
       buildings are batched and instanced props draw rough plain materials as
       one part)
-- [ ] Next pass: the Meridian's and Saltmere's maps rebuilt around the hook
+- [x] The Meridian's and Saltmere's maps rebuilt to home's standard **(B)**: the
+      Meridian on a reef, landed on from a rock islet (camp, reef beacon), the
+      cargo jam across a lagoon, the cargo spill out of the breach, an old hulk,
+      a rampart round the reef; its wreckage in pieces (spars, machinery, kelp,
+      brass-strapped plating). Saltmere as a sea stack with the tower on its
+      shoulder, a cleft stair, the old landing stage for the arena (sheds, a
+      fallen crane, a broken sea wall), a breakwater out to a quay and
+      boathouse, and a sea arch. Same beats and counts; both pass the tide
+      sweep, and the rubble is proved the only way up **(T)**. Draw calls: a
+      place's wrecks draw merged (tearing a piece off blanks it) and scenery
+      merges by finish, so the Meridian peaks at about 275 (low water, the
+      ambush, all thirteen enemies about you), Saltmere at about 175, and home
+      with everything built at about 175–200
 
 **Accept:** a fresh save's first rebuild (the forge) in about 5 minutes and
 Stage 1 in 15–25 **(T)**; home never traps you at either tide in any plot state

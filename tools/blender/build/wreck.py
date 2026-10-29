@@ -5,18 +5,24 @@ water sits at y 0 at low tide and 1.8 at high tide):
 
   ship      stern x -34 .. stem x +42.6, beam z -18 .. -6, main deck y 6,
             stern castle (the chart room, with the Drowned Lens) at x -34 .. -25
-  shelf     the rock landing, y 2.8, south-west; the stern rail overhangs it
-  lagoon    between the shelf and mid-ship, floor y -0.5: a wade at low tide,
-            a swim at high tide
-  flats     reef flats to the east, y 0.2 - 1.0, leading to the hull breach
+  islet     the landing: dark layered rock under turf, its crown y 3 by the
+            stern, rising south-west to a crag with the reef beacon on it; the
+            boat in a gut on its west side; an abandoned salvagers' camp
+  lagoon    between the islet's sheer east face and mid-ship, floor y -0.5: a
+            wade at low tide, a swim at high tide
+  reef      rock ribs and sand gullies south and east of the ship, low and wet
+            between the islet and the breach (a swim at high water), rising to
+            a belt you can wade at high water from the islet's tail to the bow;
+            the ship's cargo spilled from the breach across it, an older hulk's
+            ribs on its far side; its rim drops away to the open sea
 
 Two ways up to the chart room, and the tide picks which:
-  low tide   flats -> hull breach (x -3 .. 7) -> hold (floor 0.3 -> 0.9)
-             -> the ramp along the north wall -> deck hatch
-  high tide  shelf -> floating cargo crates (BUOY_) across the lagoon
+  low tide   the islet's tail -> the reef -> hull breach (x -3 .. 7) -> hold
+             (floor 0.3 -> 0.9) -> the ramp along the north wall -> deck hatch
+  high tide  islet -> floating cargo crates (BUOY_) jammed across the lagoon
              -> the fallen mizzen (its foot hangs at y 2.6, out of reach at low
              water) -> deck
-Ways down: drop through the broken stern rail onto the shelf, or, once you have
+Ways down: drop through the broken stern rail onto the islet, or, once you have
 the lens, the rope ladder.
 
 Everything you walk on or bump into is a plain shape, kept as a hidden COL_
@@ -38,11 +44,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 import bmesh  # noqa: E402
 import bpy  # noqa: E402
 import kit  # noqa: E402
-from kit import B, MB, Paint, fbm3, noise2, smoothstep  # noqa: E402
+from kit import B, MB, Paint, along, fbm3, look, mix, noise2, poly_sd, smoothstep  # noqa: E402
 
 kit.reset()
 
 TEMPLATES = kit.load_props()
+HOME = kit.load_home()
 P = kit.palette()
 GLOW = kit.material("glow_sea", 0x3DFFB0, emit=0x3DFFB0, strength=3.0)
 LIT = kit.material("glass_lit", 0xFFE2A8, emit=0xFFA040, strength=1.4)
@@ -95,81 +102,204 @@ def lerp(a, b, t):
     return a + (b - a) * t
 
 
-def rect_dist(x, z, x0, x1, z0, z1):
-    """Distance from (x, z) to an axis-aligned rectangle (0 inside)."""
-    dx = max(x0 - x, 0.0, x - x1)
-    dz = max(z0 - z, 0.0, z - z1)
-    return math.hypot(dx, dz)
-
-
-def mix(a, b, t):
-    t = max(0.0, min(1.0, t))
-    out = 0
-    for sh in (16, 8, 0):
-        ca, cb = (a >> sh) & 255, (b >> sh) & 255
-        out |= int(round(ca + (cb - ca) * t)) << sh
-    return out
-
-
 def frange(a, b, step):
     n = int(round((b - a) / step))
     return [round(a + i * step, 4) for i in range(n + 1)]
 
 
 # ------------------------------------------------------------------ terrain
+# The Meridian drove up onto the back of a reef and lies with her stern against
+# the islet you land on. The reef runs out south and east of her: rock ribs
+# with sand between, bared at low water. Off the reef and the islet the sea
+# floor is swimming depth even at low water, so a fall off the outside always
+# ends with the current bringing you in (the tide sweep, GDD section 6).
+
+HW = kit.HIGH_WATER
+SEA_FLOOR = SEA
+# The islet's cliff top, from its north-west corner beside the stern, round by
+# the hull, down its east face over the lagoon and back up its west side.
+ISLET = [(-45.0, -10.5), (-38.5, -9.2), (-35.4, -7.4), (-19.8, -7.4), (-18.7, -3.0), (-19.0, 3.5), (-19.0, 9.6), (-20.3, 13.0),
+         (-24.5, 16.6), (-30.0, 20.5), (-37.5, 22.0), (-44.5, 19.5), (-48.5, 13.0), (-48.2, 7.5), (-47.6, 1.0), (-48.2, -4.5)]
+ISLET_SHEER = {3, 4, 5, 6}  # its faces over the lagoon drop sheer, so the floating cargo can lie close in
+CRAG = (-40.5, 14.0)  # the islet's high end, where the reef beacon stands
+# Where you come ashore, at the gut's head: a level ledge of rock.
+LANDING = (-37.6, 4.3, 3.35)
+# The boat's gut, cut into the islet's west side: (x, z, floor).
+GUT = [(-57.0, 4.3, -2.4), (-47.5, 4.3, -2.1), (-42.0, 4.2, -1.7)]
+# Outcrops breaking the islet's turf: (x, z, radius, height).
+OUTCROPS = [(-34.0, 0.5, 2.6, 1.1), (-27.5, 8.0, 2.2, 0.9), (-43.0, -4.0, 2.4, 1.3), (-33.0, 17.0, 2.8, 1.4), (-24.0, -2.5, 1.8, 0.7)]
+# The islet's tail: from its crown down to the rampart, the way out at low water
+# and the way home at high.
+TAIL = [(-25.0, 11.0, 2.98), (-21.0, 14.6, 2.45), (-16.5, 18.2, 1.85), (-12.0, 20.6, 1.55), (-8.5, 22.0, 1.6)]
+# The rampart: the reef's rim, a ridge of rock along its south and east sides,
+# dry at high water, the open sea breaking on its outside. (x, z, crest y)
+# Its south-east corner rises into a knoll, the Horn, the one place you can see the whole wreck from.
+RAMPART = [(-9.0, 22.4, 1.6), (-2.0, 26.8, 2.3), (10.0, 30.4, 2.8), (22.0, 31.2, 3.1), (34.0, 28.8, 3.6), (44.0, 23.8, 6.2),
+           (51.5, 15.0, 3.3), (55.5, 4.0, 2.4), (54.0, -6.5, 1.9), (48.0, -13.5, 1.5), (44.5, -16.6, 0.9)]
+TORS = [(16.0, 31.5, 1.0), (53.5, 9.5, 0.9), (52.0, -10.0, 0.8)]  # crags on its crest: (x, z, how big)
+# Sea stacks standing in deep water round the reef: (x, z, top, how big).
+STACKS = [(-57.0, 14.0, 9.5, 2.2), (-46.0, 30.0, 6.5, 1.7), (-16.0, 31.5, 5.0, 1.5), (14.0, 40.0, 7.5, 2.0), (60.0, 27.0, 11.0, 2.4),
+          (64.0, -2.0, 6.0, 1.7), (55.0, -26.0, 8.0, 1.9), (-48.0, -22.0, 7.0, 1.8)]
+LAGOON = [(-19.5, -6.5), (-7.0, -6.5), (-4.5, -2.0), (-4.0, 4.0), (-5.0, 10.5), (-8.0, 14.0), (-12.0, 14.5), (-16.5, 13.5), (-19.5, 10.0)]
+# Between the islet and the breach the reef stays a swim at high water (the
+# flood closes the low route); round that it rises to the rampart's foot, a
+# wade at high water, so the rescue current never puts you back in the sea.
+SWIM = [(-20.0, -6.5), (24.0, -6.5), (25.0, 3.0), (15.0, 10.0), (3.0, 14.0), (-8.0, 15.0), (-19.5, 13.5)]
+# The reef flats inside the rampart (its crest is their edge), the ship's north side and the islet.
+REEF = [(-36.0, -18.6), (44.0, -18.6), (48.0, -13.5), (54.0, -6.5), (55.5, 4.0), (51.5, 15.0), (44.0, 23.8), (34.0, 28.8), (22.0, 31.2),
+        (10.0, 30.4), (-2.0, 26.8), (-9.0, 22.4), (-15.0, 19.0), (-22.0, 12.0), (-20.5, -6.0), (-36.0, -6.0)]
+# Rock ribs running out south-east across the flats, with sand in the gullies between them.
+RIBS = [[(x, z, 0.0) for x, z in rib] for rib in (
+    [(-3.0, 17.5), (6.0, 21.0), (14.0, 25.5)],
+    [(8.0, 9.5), (17.0, 15.0), (26.0, 19.5), (34.0, 22.5)],
+    [(16.0, -1.0), (24.0, 5.5), (33.0, 11.5), (42.0, 16.0)],
+    [(30.0, -6.0), (38.0, 0.0), (46.0, 6.0)],
+)]
+POOLS = [(-1.0, 6.0, 2.4), (15.5, 3.5, 2.6), (8.0, 24.0, 2.2), (30.0, 15.5, 2.0), (41.0, 9.0, 2.2), (22.0, 26.0, 1.8)]
 
 
-def flats(x, z):
-    return 0.2 + 0.8 * smoothstep(-6, 30, z) + 0.08 * noise2(x * 0.7, z * 0.7, 3)
+def strata(h, step=0.55):
+    """Rock that breaks in ledges: each `step` of height a flat, then a short rise."""
+    k = math.floor(h / step)
+    return (k + smoothstep(0.55, 1.0, h / step - k)) * step
 
 
-def height(x, z):
-    # Reef platform: the flats, falling away to open sea at the edges.
-    reef = rect_dist(x, z, -24, 50, -26, 32) + 3 * noise2(x * 0.2, z * 0.2, 11)
-    y = lerp(flats(x, z), SEA, smoothstep(0, 9, reef))
-    # Lagoon between the landing and mid-ship.
-    lag = rect_dist(x, z, -18.5, -6, -5, 11)
-    y = lerp(-0.5 + 0.05 * noise2(x, z, 4), y, smoothstep(0, 2.5, lag))
-    # Under the hull the seabed drops away (the hold floor is its own mesh).
-    if STERN - 1 < x < BOW_TIP and NORTH < z < SOUTH - 0.5:
-        y = min(y, -1.0)
-    # Rock shelf (the landing). Steep sides.
-    shelf = rect_dist(x, z, -38, -19.5, -5.8, 13)
-    y = max(y, 2.8 + 0.04 * noise2(x * 2, z * 2, 5) - smoothstep(0, 1.4, shelf) * 7.0)
-    # A rocky slope from the shelf's south end down to the flats. East of the
-    # shelf it keeps clear of the lagoon so you can't jump to the mast's foot.
-    slope = min(rect_dist(x, z, -38, -19, 12, 24), rect_dist(x, z, -19, -3, 15, 24))
-    target = lerp(2.8, flats(x, z), smoothstep(-24, -5, x)) + 0.06 * noise2(x * 1.3, z * 1.3, 8)
-    y = max(y, target - smoothstep(0, 1.6, slope) * 7.0)
+_ribs = {}
+
+
+def ribness(x, z):
+    key = (round(x, 3), round(z, 3))
+    r = _ribs.get(key)
+    if r is None:
+        w = 0.8 * fbm3(x * 0.3, 0.0, z * 0.3, 24)
+        r = _ribs[key] = max(1 - smoothstep(0.5, 2.2, along(x, z, rib)[0] + w) for rib in RIBS)
+    return r
+
+
+def belt(x, z):
+    """0 in the band that's a swim at high water, 1 on the belt you can wade then."""
+    return smoothstep(0.0, 7.0, poly_sd(x, z, SWIM)[0] + 1.5 * fbm3(x * 0.08, 0.0, z * 0.08, 21))
+
+
+def reef(x, z):
+    b = belt(x, z)
+    y = lerp(0.16, 0.86, b) + 0.05 * noise2(x * 0.9, z * 0.9, 22) + 0.04 * fbm3(x * 0.35, 0.0, z * 0.35, 23)
+    y += ribness(x, z) * lerp(0.3, 0.45, b) * (0.75 + 0.25 * noise2(x * 0.5, z * 0.5, 25))
+    for px, pz, r in POOLS:
+        d = math.hypot(x - px, z - pz) + 0.5 * noise2(x * 0.8, z * 0.8, 26)
+        y = min(y, lerp(-0.35, y, smoothstep(0.35 * r, r, d)))
+    d = poly_sd(x, z, REEF)[0] + 2.0 * fbm3(x * 0.07, 0.0, z * 0.07, 27)
+    return y if d <= 0 else y - (y - SEA_FLOOR) * smoothstep(0.0, 6.0, d)
+
+
+def lagoon(x, z, y):
+    d = poly_sd(x, z, LAGOON)[0] + 0.8 * fbm3(x * 0.15, 0.0, z * 0.15, 28)
+    return lerp(-0.5 + 0.06 * noise2(x * 0.7, z * 0.7, 29), y, smoothstep(-0.5, 3.0, d))
+
+
+def rampart(x, z):
+    """A flat crest a few metres wide along the spine, an easy slope down to the
+    flats inside, and outside one plunge to the sea floor."""
+    d, cy, t = along(x, z, RAMPART)
+    i = min(int(t), len(RAMPART) - 2)
+    (ax, az, _), (bx, bz, _) = RAMPART[i], RAMPART[i + 1]
+    inside = ((x - ax) * (bz - az) - (z - az) * (bx - ax)) / math.hypot(bx - ax, bz - az)  # > 0 toward the flats
+    d += 1.2 * fbm3(x * 0.08, 0.0, z * 0.08, 53)
+    over = max(0.0, d - 2.2 - 1.0 * (fbm3(t * 0.7, 0.0, 0.0, 54) + 0.4))
+    y = lerp(cy - (cy - SEA_FLOOR) * smoothstep(0.0, 4.0, over), cy - over * over * 0.08, smoothstep(-1.5, 1.5, inside))
+    y += 0.12 * noise2(x * 0.9, z * 0.9, 55) + 0.45 * fbm3(x * 0.25, 0.0, z * 0.25, 56) * smoothstep(1.5, 3.5, d)
+    for tx, tz, s in TORS:
+        r = math.hypot(x - tx, z - tz)
+        if r < 5.0 * s:
+            y += 1.5 * s * (1 - smoothstep(1.0 * s, 4.0 * s, r + 0.8 * fbm3(x * 0.5, 0.0, z * 0.5, 57)))
     return y
 
 
-def color(x, z, y):
-    n = fbm3(x * 0.16, 0.0, z * 0.16, 31)
-    f = fbm3(x * 0.85, 0.0, z * 0.85, 32)
-    if y > 2.3:
-        # The shelf: grey stone, ochre lichen, darker cracks.
-        c = mix(0x635F57, 0x8C877C, 0.5 + 0.6 * n)
-        c = mix(c, 0x9E8C55, smoothstep(0.3, 0.6, f) * 0.55)
-        return mix(c, 0x4F4C46, smoothstep(-0.4, -0.65, f) * 0.8)
-    if y < -0.3:
-        return mix(0x333C31, 0x404A37, 0.5 + 0.5 * n)
-    # Between the tides: weed low down, sand and barnacled rock higher up, and
-    # a dark strand line of wrack where high water stops.
-    wet = smoothstep(1.3, -0.2, y)
-    sand = mix(0x8C8062, 0x9E906E, 0.5 + 0.5 * f)
-    weed = mix(0x4C583A, 0x67714A, 0.5 + 0.5 * n)
-    c = mix(sand, weed, wet * (0.55 + 0.45 * smoothstep(-0.3, 0.4, n)))
-    c = mix(c, 0x6C675A, smoothstep(0.25, 0.6, f) * 0.4)
-    return mix(c, 0x4A4430, smoothstep(0.22, 0.0, abs(y - 1.8)) * 0.5)
+def islet(x, z):
+    d, edge = poly_sd(x, z, ISLET)
+    sheer = edge in ISLET_SHEER
+    if not sheer:
+        d += 1.3 * fbm3(x * 0.09, 0.0, z * 0.09, 41)
+    r = math.hypot(x - CRAG[0], z - CRAG[1]) + 1.2 * fbm3(x * 0.2, 0.0, z * 0.2, 44)
+    top = 2.95 + 0.55 * (fbm3(x * 0.1, 0.0, z * 0.1, 42) + 0.35) * smoothstep(-2.0, 8.0, z + 0.2 * x) + strata(6.5 * (1 - smoothstep(2.0, 13.0, r)))
+    for ox, oz, orad, oh in OUTCROPS:
+        k = math.hypot(x - ox, z - oz) + 0.7 * fbm3(x * 0.4, 0.0, z * 0.4, 43)
+        top += strata(oh * (1 - smoothstep(0.5 * orad, orad, k)), 0.35)
+    if d <= 0:
+        return top
+    return top - (top - SEA_FLOOR) * smoothstep(0.0, 1.0 if sheer else 3.0, d)
 
 
-ground = kit.material("TIDE_reef", 0xFFFFFF, rough=0.95, vcol=True)
-kit.terrain("terrain", -70, 70, -48, 52, 1.0, height, color, ground, props={"col": 1})
+def under_hull(x, z):
+    """Inside the hull's waterline, where the hold floor (its own mesh) is the ground."""
+    if not STERN - 1.0 < x < STEM:
+        return False
+    half = HB if x < TAPER else HB * max(0.0, 1.0 - ((x - TAPER) / (STEM - TAPER)) ** 1.6)
+    return abs(z - ZC) < half - 0.5
+
+
+_heights = {}
 
 
 def H(x, z):
-    return height(x, z)
+    key = (round(x, 3), round(z, 3))
+    y = _heights.get(key)
+    if y is not None:
+        return y
+    y = max(lagoon(x, z, reef(x, z)), islet(x, z), rampart(x, z))
+    y = lerp(LANDING[2] + 0.03 * noise2(x * 1.7, z * 1.7, 48), y, smoothstep(2.2, 3.8, math.hypot(x - LANDING[0], z - LANDING[1])))
+    d, gy, _ = along(x, z, GUT)
+    y = min(y, lerp(gy, y, smoothstep(1.4, 3.2, d + 0.4 * noise2(x * 0.6, z * 0.6, 45))))
+    d, ty, _ = along(x, z, TAIL)
+    y = max(y, lerp(y, ty + 0.12 * noise2(x * 1.1, z * 1.1, 47), 1.0 - smoothstep(2.4, 4.6, d + 0.6 * noise2(x * 0.4, z * 0.4, 46))))
+    if under_hull(x, z):
+        # Hidden under the hold floor, and too close under it to stand in.
+        y = min(y, -0.6)
+    _heights[key] = y
+    return y
+
+
+def grade(x, z):
+    return math.hypot(H(x + 1, z) - H(x - 1, z), H(x, z + 1) - H(x, z - 1)) / 2
+
+
+def on_islet(x, z):
+    return poly_sd(x, z, ISLET)[0] < 0.6 or along(x, z, TAIL)[0] < 3.0
+
+
+def color(x, z, y):
+    n = fbm3(x * 0.13, 0.0, z * 0.13, 31)
+    f = fbm3(x * 0.7, 0.0, z * 0.7, 32)
+    steep = smoothstep(0.5, 1.0, grade(x, z) + 0.15 * f)
+    # Dark layered rock: bands of lighter and darker stone up the faces, ochre lichen on the dry tops.
+    band = 0.5 + 0.5 * math.sin(y * 5.2 + 1.8 * n)
+    rock = mix(mix(0x4A4741, 0x67635A, 0.5 + 0.6 * n), mix(0x34322F, 0x4B4843, 0.5 + 0.6 * n), band * 0.75)
+    rock = mix(rock, 0x9E8C55, smoothstep(0.35, 0.65, f) * 0.4 * smoothstep(HW + 0.6, HW + 1.4, y))
+    # Barnacles in a pale band under the high-water line, weed below it.
+    rock = mix(rock, mix(0x77726A, 0x8A857A, 0.5 + 0.5 * f), smoothstep(HW + 0.3, HW - 0.2, y) * smoothstep(0.4, 1.0, y) * 0.6)
+    rock = mix(rock, mix(0x323C2B, 0x45503A, 0.5 + 0.5 * n), smoothstep(0.8, 0.1, y) * 0.8)
+    if y < -0.4:
+        # The lagoon's bed and the sea floor.
+        return mix(0x27302A, 0x34402F, 0.5 + 0.5 * n)
+    if on_islet(x, z) and y > HW + 0.6:
+        # Turf over the crown, thin and worn, the rock showing through where it's steep.
+        turf = mix(0x46533A, 0x63704A, 0.5 + 0.6 * n)
+        turf = mix(turf, 0x7E7656, smoothstep(0.2, 0.55, f) * 0.45)
+        return mix(turf, rock, max(steep, smoothstep(0.5, 0.8, f) * 0.7))
+    if y > HW + 0.4:
+        # The rampart's crest: bare rock, salt-burnt grass in its hollows.
+        return mix(rock, mix(0x5E6440, 0x76744C, 0.5 + 0.5 * f), smoothstep(0.1, 0.5, n) * (1 - steep) * 0.55)
+    # The flats: rock on the ribs, rippled wet sand in the gullies, weed where the water lies longest.
+    ripple = 0.5 + 0.5 * math.sin(z * 1.3 + x * 0.45 + n * 3.0)
+    sand = mix(0x6F6650, 0x847960, ripple * 0.6 + 0.2 * f)
+    sand = mix(sand, mix(0x434E36, 0x56603E, 0.5 + 0.5 * f), smoothstep(0.45, 0.05, y) * (0.45 + 0.45 * smoothstep(-0.2, 0.4, n)))
+    c = mix(sand, rock, max(steep, smoothstep(0.3, 0.65, ribness(x, z))))
+    # A dark line of wrack where high water stops.
+    return mix(c, 0x3E3826, smoothstep(0.2, 0.0, abs(y - HW - 0.05)) * 0.6)
+
+
+ground = kit.material("TIDE_reef", 0xFFFFFF, rough=0.95, vcol=True)
+kit.terrain("terrain", -70, 70, -48, 52, 1.0, H, color, ground, props={"col": 1})
 
 
 def prop(kind, name, x, z, y=None, yaw=None, props=None, scale=1.0):
@@ -1399,13 +1529,35 @@ for x in (-20.0, -8.0, 4.0, 16.0, 28.0):
 posts.build("hold_posts", grime=0.2, tideline=True, props={"col": 1})
 
 # Cargo crates that float up with the tide: the high-water bridge from the
-# shelf to the mast's foot. They rest on the lagoon floor at low tide.
-# At high water their tops sit at 2.4: step down from the shelf, along the
-# row, and up onto the mast's foot from the last one.
+# islet to the mast's foot, jammed in a curve across the lagoon where the swell
+# left them. They rest on the lagoon floor at low tide. At high water their
+# tops sit at 2.4: hop down from the islet's sheer face, along the jam, and up
+# onto the mast's foot from the last one, right under it.
 for _ in range(18):
-    rnd.random()  # the blockout's breach planks drew these; keep the rocks and barrels where they were
-for i, x in enumerate((-18.6, -16.6, -14.6, -12.6, -10.6, -8.8)):
-    prop("buoy_crate", f"BUOY_crate_{i}", x, 10.95, y=-0.5, yaw=0.0, props={"float": -0.3, "min": -0.5, "max": 1.5})
+    rnd.random()  # the blockout's breach planks drew these; keep the deck's barrels where they were
+
+
+def jam(n, p0=(-16.6, 9.2), c=(-12.5, 14.0), p2=(-8.8, 10.95)):
+    """n points evenly along a curve from p0 to p2 (bowed toward c), with the turn that lays a crate along it."""
+    pts = [((1 - t) ** 2 * p0[0] + 2 * (1 - t) * t * c[0] + t * t * p2[0], (1 - t) ** 2 * p0[1] + 2 * (1 - t) * t * c[1] + t * t * p2[1]) for t in (k / 200 for k in range(201))]
+    run = [0.0]
+    for a, b in zip(pts, pts[1:]):
+        run.append(run[-1] + math.dist(a, b))
+    out = []
+    for i in range(n):
+        k = min(range(len(run)), key=lambda j: abs(run[j] - run[-1] * i / (n - 1)))
+        a, b = pts[max(0, k - 1)], pts[min(len(pts) - 1, k + 1)]
+        out.append((pts[k][0], pts[k][1], math.atan2(-(b[1] - a[1]), b[0] - a[0])))
+    return out
+
+
+JAM = jam(6)
+jr = random.Random(17)  # the jam's own dice: knocked askew, not laid in a row
+for i, (x, z, yaw) in enumerate(JAM):
+    off = (jr.random() - 0.5) * 0.5 if 0 < i < len(JAM) - 1 else 0.0
+    x, z = x - math.sin(yaw) * off, z - math.cos(yaw) * off
+    prop("buoy_crate", f"BUOY_crate_{i}", x, z, y=-0.5, yaw=yaw + (jr.random() - 0.5) * (0.35 if i == len(JAM) - 1 else 0.9),
+         props={"float": -0.3, "min": -0.5, "max": 1.5})
 
 # --------------------------------------------------------------- deck dressing
 
@@ -1414,7 +1566,6 @@ for i, (x, z) in enumerate([(-14.0, -8.0), (-13.0, -8.6), (12.0, -16.5), (25.0, 
 for i, (x, z) in enumerate([(14.5, -7.2), (15.6, -7.4)]):
     prop("supply_crate", f"crate_deck_{i}", x, z, y=DECK, yaw=0.3 * i)
 prop("lantern_post", "lantern_deck", -21.5, -7.0, y=DECK, yaw=math.pi)
-prop("lantern_post", "lantern_shelf", -22.5, 9.0, yaw=0.0)
 
 # Lanterns someone left burning in the hold.
 prop("lantern_post", "lantern_hold_aft", -12.5, -8.0, y=floor_y(-12.5), yaw=math.pi)
@@ -1433,59 +1584,293 @@ for i, (x, z, yaw) in enumerate([(8.6, -16.9, 0.4), (-6.4, -16.8, 2.0), (27.6, -
 for i, (x, z) in enumerate([(13.2, -16.7), (-11.6, -16.8), (-12.3, -16.2)]):
     dress("cask_small", f"cask_deck_{i}", x, z, y=DECK)
 
-# --------------------------------------------------------- landing and the reef
+# ------------------------------------------------------------ the islet and the boat
 
-prop("rowboat", "BUOY_boat", -42.5, 4.0, y=0.0, yaw=math.pi / 2, props={"interact": "boat", "range": 6.0, "float": -0.15, "min": -1.0, "max": 2.5})
-kit.empty("SPAWN_landing", (-35.0, 2.9, 4.0), yaw=-math.pi / 4)
+# The boat lies in the gut at any tide; you come ashore at its head.
+prop("rowboat", "BUOY_boat", -42.6, 4.25, y=0.0, yaw=math.pi / 2, props={"interact": "boat", "range": 6.0, "float": -0.15, "min": -1.0, "max": 2.5})
+kit.empty("SPAWN_landing", (LANDING[0], H(LANDING[0], LANDING[1]) + 0.05, LANDING[1]), yaw=look(1.0, -0.45))
+HULK = (44.0, 22.0)  # the older wreck's bones, on the reef's far side
+# The way the Meridian's cargo spilled from the breach across the reef.
+SPILL = [(2.0, -4.0, 0.0), (9.0, 6.0, 0.0), (16.0, 14.0, 0.0), (22.0, 22.0, 0.0)]
 
-# Rocks around the shelf (clear of the boat on its west side and of the path
-# down the slope) and along the reef edge.
-for i in range(10):
-    z = rnd.choice((-3.5, -2.0, 9.5, 11.0, 12.5)) + (rnd.random() - 0.5)
-    x = -39.2 - rnd.random() * 1.5
-    r = 0.8 + rnd.random() * 1.2
-    MB().rock(r, mat=P["rock"] if i % 3 else P["rock_dark"], seed=400 + i, squash=0.7).build(f"rock_shelf_{i:02d}", loc=(x, H(x, z) - r * 0.4, z), tideline=True, props={"col": 1})
-for i in range(8):
-    x = -37.5 + rnd.random() * 7
-    z = 21.5 + rnd.random() * 3
-    r = 0.8 + rnd.random() * 1.2
-    MB().rock(r, mat=P["rock"], seed=450 + i, squash=0.7).build(f"rock_slope_{i:02d}", loc=(x, H(x, z) - r * 0.4, z), tideline=True, props={"col": 1})
-for i in range(14):
-    x = 46 + (rnd.random() - 0.5) * 6
-    z = -20 + rnd.random() * 48
-    r = 0.9 + rnd.random() * 1.6
-    MB().rock(r, mat=P["rock_dark"], seed=500 + i).build(f"rock_reef_{i:02d}", loc=(x, H(x, z) - r * 0.35, z), tideline=True, props={"col": 1})
+# ------------------------------------------------------------------ rocks
+# home.blend's unit boulders (kit.Boulders): bedded on the reef's outer parts,
+# or, where the ground falls away, sea rocks stood up out of the deep.
 
-# Debris field to the east: wisp country, faint sea-green glows.
-for i, (x, z, yaw) in enumerate([(32, 14, 0.4), (38, 22, 2.1), (28, 24, 1.2)]):
-    prop("hull_ribs", f"ribs_{i}", x, z, yaw=yaw)
+rocks = kit.Boulders(HOME, H, vr)
+boulder = rocks.boulder
+
+
+def rock_ok(x, z):
+    """Boulders keep off the low band between the islet and the breach, the
+    lagoon, the islet and its tail, the gut, the hull's sides, the spill, the
+    old hulk and the cliff faces."""
+    if poly_sd(x, z, SWIM)[0] < 1.5 or poly_sd(x, z, LAGOON)[0] < 2.0 or poly_sd(x, z, ISLET)[0] < 1.5:
+        return False
+    if along(x, z, TAIL)[0] < 5.0 or along(x, z, GUT)[0] < 4.5 or along(x, z, SPILL)[0] < 4.0 or math.hypot(x - HULK[0], z - HULK[1]) < 6.0:
+        return False
+    if STERN - 3.0 < x < STEM + 3.0 and NORTH - 3.0 < z < SOUTH + 3.0:
+        return False
+    return not (H(x, z) > rocks.sea_rock and grade(x, z) > 1.0)
+
+
+def coast(edges, off, gap, size, fit=rock_ok):
+    """Rocks along a coast: `edges` are (a, b, outward normal); each rock
+    `off` metres out from its edge, about `gap` apart."""
+    for (ax, az), (bx, bz), (nx, nz) in edges:
+        L = math.hypot(bx - ax, bz - az)
+        t = vr.random() * gap
+        while t < L:
+            if vr.random() < 0.6:
+                o = off[0] + vr.random() * (off[1] - off[0])
+                x, z = ax + (bx - ax) * t / L + nx * o, az + (bz - az) * t / L + nz * o
+                if fit(x, z):
+                    boulder(x, z, size[0] + vr.random() * (size[1] - size[0]))
+            t += gap * (0.8 + 0.5 * vr.random())
+
+
+def outward(poly, skip=()):
+    """A closed outline's edges with the normal that points out of it."""
+    for i in range(len(poly)):
+        if i in skip:
+            continue
+        (ax, az), (bx, bz) = poly[i], poly[(i + 1) % len(poly)]
+        L = math.hypot(bx - ax, bz - az)
+        nx, nz = (bz - az) / L, -(bx - ax) / L
+        if poly_sd((ax + bx) / 2 + nx, (az + bz) / 2 + nz, poly)[0] < 0:
+            nx, nz = -nx, -nz
+        yield (ax, az), (bx, bz), (nx, nz)
+
+
+def seaward(line):
+    """A ridge's segments with the normal on its outside (the rampart's flats are on its left)."""
+    for (ax, az, _), (bx, bz, _) in zip(line, line[1:]):
+        L = math.hypot(bx - ax, bz - az)
+        yield (ax, az), (bx, bz), (-(bz - az) / L, (bx - ax) / L)
+
+
+coast(outward(ISLET, {2, 3, 4, 5, 6}), (4.0, 7.0), 3.4, (1.6, 3.4))
+coast(seaward(RAMPART), (5.5, 9.5), 4.2, (1.8, 3.6))
+# Boulders along the rampart's crest, on its seaward half: the walk along its top stays clear.
+coast(seaward(RAMPART[1:-1]), (1.4, 2.6), 5.0, (0.9, 1.9), fit=lambda x, z: True)
+# A few sea rocks off the ship's north side, where the reef ends at her hull.
+for x, z in [(-40.0, -24.0), (-28.0, -27.5), (22.0, -26.0), (49.0, -21.0), (54.0, -15.5)]:
+    for _ in range(3):
+        boulder(x + vr.uniform(-3.0, 3.0), z + vr.uniform(-2.5, 2.5), 2.0 + vr.random() * 1.6)
+# Rock heads standing out of the flats by the rampart's foot, dry at high water.
+heads = 0
+for _ in range(600):
+    if heads >= 10:
+        break
+    x, z = vr.uniform(-6.0, 52.0), vr.uniform(-12.0, 30.0)
+    if (x > 30.0 or z > 20.0) and poly_sd(x, z, REEF)[0] < -3.0 and belt(x, z) > 0.9 and along(x, z, RAMPART)[0] > 5.0 and rock_ok(x, z):
+        boulder(x, z, 1.0 + vr.random() * 1.3, sink=0.35)
+        heads += 1
+# The stacks: unit boulders piled and stretched up out of the deep.
+for x, z, top, size in STACKS:
+    rocks.stack(x, z, top, size, SEA_FLOOR)
+# Stones bedded round the islet's outcrops.
+for ox, oz, orad, _ in OUTCROPS:
+    for _ in range(2):
+        a = vr.random() * math.tau
+        boulder(ox + math.cos(a) * orad * 0.9, oz + math.sin(a) * orad * 0.9, 0.7 + vr.random() * 0.6, sink=0.5)
+
+# ---------------------------------------------------------------- dressing
+
+# The reef beacon on the islet's crag: an iron pole with a basket on top, a
+# daymark for boats coming in, guyed with chain to rings in the rock.
+bx, bz = CRAG
+by = H(bx, bz)
+beacon = MB(60)
+beacon.rock(1.1, at=(0.0, -0.4, 0.0), mat=P["rock_dark"], seed=61, squash=0.45, cuts=5)
+for k in range(9):
+    a = k / 9 * math.tau
+    beacon.rock(0.32 + vr.random() * 0.12, at=(math.cos(a) * 0.75, 0.1 + vr.random() * 0.15, math.sin(a) * 0.75), mat=P["rock"], seed=62 + k, squash=0.7, cuts=3)
+beacon.cyl(0.11, 0.08, 6.4, at=(0.0, 0.0, 0.0), mat=IRON, segs=8)
+for y in (5.0, 5.75, 6.5):
+    beacon.ring(0.55 - (y - 5.0) * 0.16, 0.035, at=(0.0, y, 0.0), mat=RUST, segs=14, tube_segs=4)
+for k in range(6):
+    a = k / 6 * math.tau
+    beacon.tube([(math.cos(a) * 0.55, 5.0, math.sin(a) * 0.55), (math.cos(a) * 0.31, 6.5, math.sin(a) * 0.31)], 0.03, mat=RUST, segs=4)
+for k in range(3):
+    a = k / 3 * math.tau + 0.4
+    beacon.tube(sag((0.0, 4.6, 0.0), (math.cos(a) * 3.2, 0.25, math.sin(a) * 3.2), 0.2), 0.022, mat=IRON, segs=4)
+    beacon.ring(0.09, 0.025, at=(math.cos(a) * 3.2, 0.2, math.sin(a) * 3.2), mat=IRON, segs=8, tube_segs=4)
+beacon.build("reef_beacon", loc=(bx, by, bz), grime=0.3, props={"col": 1})
+kit.empty("FX_perch_beacon", (bx, by + 6.75, bz))
+
+# The old hulk: an older wooden wreck's ribs, half sunk in the reef.
+for i, (dx, dz, yaw) in enumerate([(0.0, 0.0, 0.5), (3.4, 2.1, 0.62)]):
+    prop("hull_ribs", f"hulk_ribs_{i}", HULK[0] + dx, HULK[1] + dz, yaw=yaw)
 glow = MB()
-for i in range(16):
-    x = 26 + rnd.random() * 16
-    z = 10 + rnd.random() * 16
+for i in range(14):
+    x = HULK[0] - 6 + rnd.random() * 12
+    z = HULK[1] - 5 + rnd.random() * 10
     glow.sphere(0.08 + rnd.random() * 0.1, at=(x, H(x, z) + 0.05, z), mat=GLOW, subdiv=1)
 glow.build("debris_glows")
 
-for i, (x, z) in enumerate([(-2, 26), (16, 28), (34, 6)]):
-    prop("dune_grass", f"grass_{i}", x, z, scale=0.9)
-prop("tide_pole", "tidepole_reef", -2.5, 9.0, y=0.0, yaw=0.0)
-prop("tide_pole", "tidepole_shelf", -18.8, 14.5, y=0.0, yaw=0.0)
+def tip(ob, pitch=0.0, roll=0.0):
+    """Knocks a placed prop over: pitch about its own x, roll about its z (game axes)."""
+    yaw = ob.rotation_euler[2]
+    ob.rotation_euler = (pitch, roll, yaw)
+    return ob
 
-# Wrack along the strand line, and loose hull planks the sea has spread over the reef.
-for i, (x, z) in enumerate([(-6.5, 16.0), (4.0, 13.5), (17.5, 10.5), (28.5, 4.5), (-30.5, 10.8), (-24.5, 12.6), (36.0, -2.5)]):
-    dress("seaweed", f"wrack_{i}", x, z)
-loose = MB(21)
-for k in range(16):
-    x = vr.uniform(-4.0, 30.0)
-    z = vr.uniform(-4.5, 14.0)
-    if math.hypot(x - 2.0, z + 4.0) < 5.0:
+
+def bale(m, at, yaw, size=(1.0, 0.7, 0.75)):
+    """A canvas-wrapped bale, roped twice round."""
+    x, y, z = at
+    sx, sy, sz = size
+    m.box((sx, sy, sz), at=(x, y, z), mat=CANVAS, yaw=yaw, bev=0.08, jit=0.12)
+    for k in (-0.28, 0.28):
+        ox, oz = math.cos(yaw) * k * sx, -math.sin(yaw) * k * sx
+        m.box((0.05, sy + 0.03, sz + 0.03), at=(x + ox, y - 0.015, z + oz), mat=ROPE, yaw=yaw, bev=0.012)
+
+
+# The salvagers' camp, on the islet's crown in the lee of its outcrops: a lean-to
+# of canvas over two pairs of crossed oars, a cold fire ring, what they'd hauled
+# up, and the sheerlegs they hauled it with, over the lagoon's sheer face.
+CAMP = (-31.2, 8.6)
+camp = MB(70)
+cx, cz = CAMP
+cy = H(cx, cz)
+for dx in (-1.6, 1.6):
+    for s in (-1, 1):
+        camp.tube([(dx, -0.05, s * 0.9), (dx + 0.05 * s, 1.75, -0.08 * s)], 0.035, mat=TEAK, segs=5)
+        camp.box((0.16, 0.5, 0.03), at=(dx + 0.05 * s, 1.55, -0.07 * s), mat=TEAK, yaw=0.0, bev=0.005)
+camp.tube([(-1.9, 1.62, 0.0), (1.9, 1.62, 0.0)], 0.045, mat=SPAR, segs=6)
+# The canvas: over the ridge and down to pegs on the windward side, sagging between.
+secs = []
+for k in range(6):
+    x = -1.85 + k * 0.74
+    sag_ = 0.12 * math.sin(k / 5 * math.pi)
+    secs.append([(x, 1.66, 0.0), (x, 1.05 - sag_, 1.05), (x, 0.42 - sag_ * 0.5, 1.9), (x, 0.06, 2.25)])
+camp.loft(secs, mat=Paint(CANVAS.mat, 0xB8AA88), jit=0.08)
+for k in (-1.7, 0.0, 1.7):
+    camp.tube([(k, 0.06, 2.25), (k, -0.05, 2.45)], 0.025, mat=TEAK, segs=4)
+# The fire ring, cold, a charred log across it, and a kettle.
+for k in range(9):
+    a = k / 9 * math.tau
+    camp.rock(0.16 + vr.random() * 0.05, at=(0.6 + math.cos(a) * 0.62, -0.02, -1.6 + math.sin(a) * 0.62), mat=P["rock"], seed=71 + k, squash=0.7, cuts=2)
+camp.cyl(0.5, 0.5, 0.03, at=(0.6, -0.01, -1.6), mat=SOOT, segs=12, bev=0)
+for k in range(3):
+    a = 0.4 + k * 2.1
+    camp.tube([(0.6 + math.cos(a) * 0.4, 0.06, -1.6 + math.sin(a) * 0.4), (0.6 - math.cos(a) * 0.35, 0.09, -1.6 - math.sin(a) * 0.35)], 0.07, mat=SOOT, segs=6)
+camp.cyl(0.16, 0.13, 0.22, at=(1.3, 0.0, -2.2), mat=IRON, segs=10)
+camp.build("camp", loc=(cx, cy, cz), yaw=0.35, grime=0.3)
+prop("supply_crate", "camp_crate_0", cx - 2.6, cz + 0.6, yaw=0.3)
+prop("supply_crate", "camp_crate_1", cx - 2.4, cz - 0.6, yaw=1.1)
+prop("cask_small", "camp_cask_0", cx + 2.4, cz + 1.4)
+prop("cask_small", "camp_cask_1", cx + 2.9, cz + 0.8)
+prop("barrel", "camp_barrel", cx - 2.0, cz + 2.0)
+prop("plank_pile", "camp_planks", cx + 2.0, cz - 2.6, yaw=0.9)
+prop("lobster_pot", "camp_pot", cx - 1.2, cz - 2.4, yaw=2.0)
+dress("rope_coil", "camp_rope", cx + 1.0, cz + 2.4)
+prop("lantern_post", "lantern_camp", cx + 1.9, cz - 0.4, yaw=-2.4)
+prop("lantern_post", "lantern_landing", -39.4, 6.6, yaw=2.6)
+
+# The sheerlegs over the lagoon: three spars lashed at the head, a block and fall hanging down to the water.
+SHEER = (-20.2, 4.6)
+legs = MB(72)
+head = (SHEER[0] + 0.9, 5.4, SHEER[1])
+for fx, fz in ((-2.6, -1.6), (-2.6, 1.6), (-0.3, 0.0)):
+    fy = H(SHEER[0] + fx, SHEER[1] + fz) - 0.15
+    legs.tube([(SHEER[0] + fx, fy, SHEER[1] + fz), head], 0.09, mat=SPAR, segs=7)
+legs.cyl(0.16, 0.16, 0.3, at=(head[0], head[1] - 0.15, head[2]), mat=ROPE, segs=8)
+legs.box((0.14, 0.36, 0.22), at=(head[0] + 0.15, head[1] - 0.62, head[2]), mat=TEAK, bev=0.02)
+legs.tube([(head[0] + 0.2, head[1] - 0.8, head[2]), (head[0] + 0.25, 1.0, head[2] + 0.1)], 0.02, mat=ROPE, segs=4)
+legs.tube([(head[0] + 0.1, head[1] - 0.8, head[2]), (SHEER[0] - 2.2, H(SHEER[0] - 2.2, SHEER[1] + 2.4) + 0.1, SHEER[1] + 2.4)], 0.02, mat=ROPE, segs=4)
+legs.build("sheerlegs", grime=0.2)
+kit.empty("FX_perch_sheerlegs", (head[0], head[1] + 0.15, head[2]))
+
+# What spilled from the breach: the cargo she carried, thinning out across the reef.
+spill = MB(74)
+cargo = 0
+
+
+def cargo_prop(kind, x, z, pitch=0.0, roll=0.0, yaw=None):
+    global cargo
+    ob = dress(kind, f"spill_{kind}_{cargo}", x, z, y=H(x, z) - 0.04, yaw=yaw)
+    cargo += 1
+    return tip(ob, pitch, roll)
+
+
+for x, z, kind, p_, r_ in [(-1.5, -3.2, "supply_crate", 0.0, 0.2), (0.5, -1.0, "barrel", 1.57, 0.0), (3.6, -2.4, "supply_crate", 0.25, 0.0),
+                           (6.0, -0.4, "barrel", 0.0, 0.0), (4.4, 2.8, "cask_small", 1.4, 0.0), (8.2, 3.6, "supply_crate", 0.0, -0.3),
+                           (11.5, 6.0, "barrel", 1.57, 0.5), (13.0, 10.8, "supply_crate", 0.0, 0.0), (15.8, 12.6, "cask_small", 0.0, 0.0),
+                           (17.5, 15.5, "barrel", 1.5, 0.0), (21.0, 19.8, "supply_crate", 0.3, 0.0), (19.5, 21.5, "barrel", 0.0, 0.0),
+                           (-3.8, 0.8, "plank_pile", 0.0, 0.0), (9.5, 12.5, "plank_pile", 0.0, 0.1), (2.2, 6.5, "rope_coil", 0.0, 0.0)]:
+    cargo_prop(kind, x, z, p_, r_)
+for x, z, yaw in [(1.8, 0.6, 0.4), (7.0, 1.2, 1.9), (10.2, 4.0, 0.7), (16.4, 17.6, 2.4)]:
+    bale(spill, (x, H(x, z) + 0.3, z), yaw)
+# Coal from her bunkers, in heaps where the sea dropped it.
+for k, (x, z, n) in enumerate([(-0.8, 3.4, 9), (5.2, 6.4, 6), (12.4, 15.6, 4)]):
+    for j in range(n):
+        a, r = vr.random() * math.tau, vr.random() * 0.9
+        spill.rock(0.12 + vr.random() * 0.12, at=(x + math.cos(a) * r, H(x, z) - 0.02, z + math.sin(a) * r), mat=SOOT, seed=80 + k * 10 + j, squash=0.7, cuts=2)
+# Her lifeboat, stove in and swamped where it fetched up.
+tip(dress("wreck_boat", "spill_lifeboat", 6.4, 10.8, y=H(6.4, 10.8) - 0.2, yaw=0.8, scale=0.8), 0.0, 0.0)
+# A broken yard with its rigging, dragged out by the tide.
+spill.tube([(13.5, H(13.5, 8.0) + 0.12, 8.0), (18.0, H(18.0, 10.5) + 0.2, 10.5), (22.5, H(22.5, 12.0) + 0.1, 12.0)], [0.16, 0.13, 0.1], mat=SPAR, segs=8)
+for t in (0.2, 0.5, 0.8):
+    x, z = lerp(13.5, 22.5, t), lerp(8.0, 12.0, t)
+    spill.tube(sag((x, H(x, z) + 0.3, z), (x + 1.2, H(x + 1.2, z + 2.5) + 0.04, z + 2.5), 0.1, 6), 0.02, mat=TARRED, segs=4)
+spill.build("spill", grime=0.25, tideline=True)
+# Her anchor, dragged from the bow, and its cable run out over the reef.
+dress("anchor", "spill_anchor", 30.5, 9.0, y=H(30.5, 9.0) - 0.05, yaw=2.6)
+cable = MB(75)
+cable.tube(sag((35.5, 3.2, -7.4), (30.8, H(30.8, 8.2) + 0.12, 8.2), -0.2, 12), 0.09, mat=RUST, segs=6)
+cable.build("anchor_cable", grime=0.3, tideline=True)
+
+# Junk on the lagoon's bed, under the crates: a hatch cover and a spar, chained to the islet's rock.
+junk = MB(76)
+junk.box((2.6, 0.18, 2.0), at=(-13.4, -0.46, 5.0), mat=DECKW, yaw=0.4, bev=0.03, tint=0.7)
+for k in range(5):
+    junk.box((2.7, 0.06, 0.3), at=(-13.4, -0.27, 4.2 + k * 0.4), mat=TEAK, yaw=0.4, bev=0.01, tint=0.75)
+junk.tube([(-17.6, -0.4, 1.6), (-12.0, -0.38, 0.4), (-8.6, -0.42, -1.6)], [0.22, 0.2, 0.16], mat=SPAR, segs=8)
+junk.tube(sag((-18.9, 1.4, 1.2), (-17.4, -0.35, 1.6), -0.1, 8), 0.05, mat=RUST, segs=5)
+junk.build("lagoon_junk", grime=0.2, tideline=True)
+
+# The old hulk's keel and stem, her knees and a few planks still on her.
+hulk = MB(77)
+hx, hz = HULK
+ky = H(hx, hz) - 0.25
+a = 0.55
+ux, uz = math.cos(a), -math.sin(a)
+hulk.tube([(hx - ux * 7.0, ky - 0.1, hz - uz * 7.0), (hx, ky + 0.05, hz), (hx + ux * 7.5, ky + 0.15, hz + uz * 7.5)], 0.22, mat=P["driftwood_dark"], segs=7)
+sx_, sz_ = hx + ux * 7.5, hz + uz * 7.5
+hulk.tube([(sx_, ky + 0.15, sz_), (sx_ + ux * 1.2, ky + 2.0, sz_ + uz * 1.2), (sx_ + ux * 1.1, ky + 3.9, sz_ + uz * 1.1)], [0.2, 0.17, 0.12], mat=P["driftwood_dark"], segs=7)
+for k in range(5):
+    t = -5.0 + k * 2.4
+    px, pz = hx + ux * t, hz + uz * t
+    hulk.box((2.4 + vr.random(), 0.06, 0.28), at=(px - uz * 1.2, H(px - uz * 1.2, pz + ux * 1.2) + 0.05, pz + ux * 1.2), mat=P["hull"], yaw=a + (vr.random() - 0.5) * 0.4, bev=0.01, tint=0.8)
+hulk.build("hulk", grime=0.3, tideline=True)
+kit.empty("FX_perch_hulk", (sx_ + ux * 1.1, ky + 4.0, sz_ + uz * 1.1))
+
+# Weed in the gullies and the tide pools, and wrack along the rampart's foot where high water stops.
+weeds = 0
+for _ in range(900):
+    if weeds >= 46:
+        break
+    x, z = vr.uniform(-18.0, 52.0), vr.uniform(-5.0, 28.0)
+    y = H(x, z)
+    if poly_sd(x, z, REEF)[0] > -1.0 or poly_sd(x, z, LAGOON)[0] < 0.5 or along(x, z, SPILL)[0] < 2.0 or under_hull(x, z):
         continue
-    L = 1.2 + vr.random() * 2.2
-    loose.plank(L, 0.24 + vr.random() * 0.1, 0.05, at=(x, H(x, z) + 0.02, z), mat=BLACK if k % 3 == 0 else HOLDW, yaw=vr.random() * math.pi, warp=0.08, tint=0.7 + 0.3 * vr.random())
-loose.build("loose_planks", tideline=True)
-for i, (x, z, yaw) in enumerate([(-33.0, 8.5, 0.6), (-27.5, -1.5, 2.2)]):
-    dress("cask_small", f"cask_shelf_{i}", x, z, yaw=yaw)
-dress("rope_coil", "rope_shelf", -31.0, 9.8, yaw=1.0)
+    if (y < 0.55 and ribness(x, z) < 0.3) or abs(y - HW) < 0.25:
+        dress("seaweed", f"weed_{weeds}", x, z, scale=0.8 + vr.random() * 0.6)
+        weeds += 1
+# Barnacled stones along the ribs' crests.
+stones = MB(78)
+for rib in RIBS:
+    for (ax, az, _), (bx, bz, _) in zip(rib, rib[1:]):
+        L = math.hypot(bx - ax, bz - az)
+        for k in range(int(L / 1.4)):
+            t = (k + vr.random()) / int(L / 1.4)
+            x, z = lerp(ax, bx, t) + vr.uniform(-0.9, 0.9), lerp(az, bz, t) + vr.uniform(-0.9, 0.9)
+            stones.rock(0.14 + vr.random() * 0.16, at=(x, H(x, z) - 0.05, z), mat=P["rock_dark"] if vr.random() < 0.6 else P["rock"], seed=200 + int(x * 7 + z * 13) % 997, squash=0.55, cuts=2)
+stones.build("reef_stones", grime=0.2, tideline=True)
+
+prop("tide_pole", "tidepole_lagoon", -6.5, 12.5, y=0.0, yaw=0.0)
+prop("tide_pole", "tidepole_reef", 20.0, 9.0, y=0.0, yaw=0.0)
 
 # --------------------------------------------------------------- gathering
 
@@ -1494,26 +1879,29 @@ def node(kind, i, x, z, y=None, prop_name=None):
     return prop(prop_name or kind, f"NODE_{kind}_{i:02d}", x, z, y=y, props={"node": kind})
 
 
-for i, (x, z) in enumerate([(10, 22), (24, 10), (-2, 14), (38, 3)]):
+# The spill: broken spars, and the machinery the sea broke out of her.
+for i, (x, z) in enumerate([(10.0, 8.5), (19.0, 17.5), (-3.5, 17.0), (36.5, 4.5)]):
     node("driftwood", i, x, z)
-for i, (x, z, y) in enumerate([(14, 3, None), (30, 20, None), (-12.0, -12.5, DECK), (19.0, -9.0, DECK)]):
+for i, (x, z, y) in enumerate([(5.5, 1.5, None), (27.0, 22.0, None), (-12.0, -12.5, DECK), (19.0, -9.0, DECK)]):
     node("scrap_pile", i, x, z, y=y)
-for i, (x, z) in enumerate([(24.0, -7.3), (14.0, -16.7), (-6.0, -7.3), (-20.0, -7.3)]):
-    node("reinforced_wreckage", i, x, z, y=floor_y(x))
-for i, (x, z) in enumerate([(-1, 2), (12, -3)]):
+# Brass-strapped plating: along the hold, and torn off by the breach.
+for i, (x, z, y) in enumerate([(24.0, -7.3, floor_y(24.0)), (-6.0, -7.3, floor_y(-6.0)), (-20.0, -7.3, floor_y(-20.0)), (8.6, -4.5, None)]):
+    node("reinforced_wreckage", i, x, z, y=y)
+# Kelp in the tide pools nearest the breach (low water).
+for i, (x, z) in enumerate([(-1.0, 6.0), (15.5, 3.5)]):
     node("kelp_bed", i, x, z)
 node("strongbox", 0, 33.5, -12.0, y=DECK)
-kit.empty("NODE_fish_glowgill_00", (-44.0, 0, -8.0), props={"node": "fish_glowgill"})
+kit.empty("NODE_fish_glowgill_00", (-44.0, 0, -14.0), props={"node": "fish_glowgill"})
 
 # ----------------------------------------------------------------- enemies
 
-for i, (x, z) in enumerate([(5, 7), (16, 14), (26, 3), (-1, 19)]):
+for i, (x, z) in enumerate([(2.0, 8.0), (14.0, 12.5), (26.0, 5.0), (-3.0, 19.5)]):
     kit.empty(f"ENEMY_crab_low_{i}", (x, H(x, z), z), props={"enemy": "brine_crab", "tide": "low"})
 for i, (x, y, z) in enumerate([(12.0, 0.3, -12.5), (-3.0, 0.55, -9.0), (30.0, DECK, -12.0)]):
     kit.empty(f"ENEMY_spitter_{i}", (x, y, z), props={"enemy": "drowned_spitter", "tide": "any"})
-for i, (x, y, z) in enumerate([(34.0, 2.5, 16.0), (2.0, DECK + 2.0, -12.0), (-17.0, DECK + 2.5, -2.0)]):
+for i, (x, y, z) in enumerate([(HULK[0] - 2.0, 2.8, HULK[1] - 1.0), (2.0, DECK + 2.0, -12.0), (-17.0, DECK + 2.5, -2.0)]):
     kit.empty(f"ENEMY_wisp_{i}", (x, y, z), props={"enemy": "lantern_wisp", "tide": "any"})
-for i, (x, z) in enumerate([(-13.0, 3.0), (8.0, 1.0)]):
+for i, (x, z) in enumerate([(-12.5, 4.0), (8.0, 3.0)]):
     kit.empty(f"ENEMY_lurker_{i}", (x, 0.0, z), props={"enemy": "tide_lurker", "tide": "high"})
 
 # Taking the lens wakes the ship: FX_ambush_<enemy id>_<n>.
@@ -1531,8 +1919,10 @@ kit.empty("GLOOM_hold", (-19.0, floor_y(-19.0), -9.5), props={"radius": 3.0})
 
 # ---------------------------------------------------- anchors and the beam
 
-# Ground level only: being rescued onto the deck would skip both routes.
-for name, (x, z) in {"reef_shelf": (-28, 6), "slope": (-14, 18), "flats": (18, 18), "bow_sand": (36, 12)}.items():
+# Ground level only (being rescued onto the deck would skip both routes), and
+# none deeper than a wade at high water, or the current would put you back in.
+for name, (x, z) in {"islet": (-31.0, 4.0), "islet_south": (-28.5, 13.5), "tail": (-14.0, 19.5), "rampart_w": (4.0, 28.4),
+                     "horn": (43.5, 23.0), "bow_sand": (36.0, 10.0)}.items():
     kit.empty(f"ANCHOR_{name}", (x, H(x, z) + 0.1, z))
 # Lantern's Rest lies to the north; its beam shows on the horizon.
 kit.empty("FX_home_light", (-140, 0, -320))

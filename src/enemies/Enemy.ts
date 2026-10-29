@@ -64,7 +64,7 @@ export abstract class Enemy implements Hittable {
     this.root.position.copy(at);
     this.root.rotation.y = Math.random() * Math.PI * 2;
     this.root.add(model);
-    collapseMaterials(model);
+    collapseMaterials(model, true);
     for (const mat of uniqueMaterials(model)) {
       this.mats.push({ mat, emissive: mat.emissive.clone(), intensity: mat.emissiveIntensity });
       if (mat.name.startsWith("GLOW_")) this.glows.push(mat);

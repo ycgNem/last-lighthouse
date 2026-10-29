@@ -70,7 +70,7 @@ home.
 4. **The wreck.** At low tide go in through the hull breach; at high tide cross the
    floating cargo to the fallen mast. Take the Drowned Lens from the chart room
    and get out alive.
-5. Focus the light. The beam finds **Saltmere Beacon**. Cross the causeway, face
+5. Focus the light. The beam finds **Saltmere Beacon**. Cross the breakwater, face
    the Wreck Guardian (jump or dash its chain sweep, then shoot the exposed heart)
    and carry the Ember to the beacon's lamp.
 

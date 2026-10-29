@@ -78,7 +78,7 @@ export class Viewmodel {
       if (reel) this.reels.set(tier, reel);
       if (grapnel) this.grapnels.set(tier, grapnel);
     }
-    for (const m of [...this.weapons.values(), ...this.rods.values(), ...this.reels.values(), ...this.grapnels.values(), this.lantern]) collapseMaterials(m);
+    for (const m of [...this.weapons.values(), ...this.rods.values(), ...this.reels.values(), ...this.grapnels.values(), this.lantern]) collapseMaterials(m, true);
     this.scene.traverse((o) => {
       const m = o as THREE.Mesh;
       if (m.isMesh) m.frustumCulled = false;

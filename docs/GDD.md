@@ -294,7 +294,7 @@ Combat 8: hold LMB to charge a heavy bolt.
 | **Drowned Spitter** | Wreck, Beacon | Stationary-ish, waterlogged corpse in kelp. Inhales (0.7 s, throat glows), fires a slow fan of 3–5 orbs | Strafe through the gaps, use cover |
 | **Lantern Wisp** | Wreck (dark areas), Beacon | Floats, blinks to a new position, then fires 2 aimed shots with a charge glow. Weak to light | Track the blink sound; a Flare stuns it for 3.5 s |
 | **Tide Lurker** *(new)* | Deep water at high tide | Shown by a moving ripple + bubbles. If you're swimming or at the edge, it surfaces (0.8 s), bites | Stay out of marked deep zones or get out fast |
-| **Wreck Guardian** (boss) | Saltmere Beacon | A colossus of fused hulls and chain rising from the water around the beacon rock. See §11 | Positioning around a generous ring arena |
+| **Wreck Guardian** (boss) | Saltmere Beacon | A colossus of fused hulls and chain rising from the sea below the beacon's stack. See §11 | Positioning round a wide old landing stage and its cover |
 
 ---
 
@@ -406,18 +406,20 @@ See `docs/LEVELS.md` for layouts, tide behaviour and encounter placement.
    the rocks, and the drift coming in between two rock arms. Maren is there from
    the start; Tib comes with the jetty, Odile with her cottage, Hesk at Stage 1,
    the Pells and the Ashbys with theirs.
-2. **Wreck of the Meridian** (dangerous) — Crabs, Spitters, Wisps, Lurkers; wreckage
-   to hook, brass behind reinforced plating (Iron Hook); two tide routes to the
-   **Drowned Lens**. The first fight, about 15–20 minutes in.
-3. **Saltmere Beacon** (finale) — short causeway approach, the **Wreck Guardian**
-   boss, the beacon and its relighting sequence.
+2. **Wreck of the Meridian** (dangerous) — a steamship driven onto a reef, reached
+   from a rock islet: Crabs, Spitters, Wisps, Lurkers; spars, machinery and kelp
+   to hook apart, brass behind reinforced plating (Iron Hook); two tide routes to
+   the **Drowned Lens**. The first fight, about 15–20 minutes in.
+3. **Saltmere Beacon** (finale) — a breakwater out to a sea stack, the **Wreck
+   Guardian** boss on the old landing stage at its foot, the beacon and its
+   relighting sequence.
 
-Home stays a sanctuary, so there's no fighting until the Meridian; the next pass
-reworks the Meridian's and Saltmere's maps around the hook.
+Home stays a sanctuary, so there's no fighting until the Meridian.
 
 ### Wreck Guardian (boss)
-Ring arena on the beacon rock's base (~30 m diameter), water all around. Three
-attacks, each with long tells:
+The old landing stage at the foot of Saltmere's stack (~30 m across), open to the
+sea on the south, where it rises; sheds, a fallen crane and a stack of blocks for
+cover. Three attacks, each with long tells:
 - **Chain Sweep** — raises a chain-arm (1.0 s, chain glows), sweeps a 120° arc at
   ground level. *Jump or dash through.*
 - **Brine Mortar** — vents glow, lobs 5 orbs; impact rings appear on the ground

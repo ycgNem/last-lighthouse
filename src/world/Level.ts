@@ -48,6 +48,9 @@ export interface Buoy extends DynamicBox {
   min: number;
   max: number;
   phase: number;
+  /** Shadow LOD (buoyShadows()): whether it casts now, and its meshes that do. */
+  shadows?: boolean;
+  casters?: THREE.Mesh[];
 }
 
 export interface LevelUpdate {
@@ -86,6 +89,23 @@ export function updateBuoys(buoys: readonly Buoy[], waterY: number, time: number
     b.object.position.y = THREE.MathUtils.clamp(waterY + b.float + bob, b.min, b.max);
     b.object.updateMatrixWorld(true);
     b.box.copy(b.local).applyMatrix4(b.object.matrixWorld);
+  }
+}
+
+/** Only buoys within `near` (squared) of `p` cast shadows, as for creatures and loot. */
+export function buoyShadows(buoys: readonly Buoy[], p: THREE.Vector3, near: number): void {
+  for (const b of buoys) {
+    const on = b.object.position.distanceToSquared(p) < near;
+    if (on === (b.shadows ?? true)) continue;
+    b.shadows = on;
+    if (!b.casters) {
+      const casters: THREE.Mesh[] = [];
+      b.object.traverse((o) => {
+        if ((o as THREE.Mesh).isMesh && o.castShadow) casters.push(o as THREE.Mesh);
+      });
+      b.casters = casters;
+    }
+    for (const m of b.casters) m.castShadow = on;
   }
 }
 

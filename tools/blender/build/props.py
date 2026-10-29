@@ -141,112 +141,153 @@ def seaweed_clump(m, rnd, at, count=5, length=0.7):
 # ------------------------------------------------------------ gather nodes
 
 
+def pieces(ob, name, parts, seed, **look):
+    """Each part (drawing into its own MB) as a child of `ob` named
+    <name>_piece_<k>: the game's hook tears them off in this order, and `ob`
+    itself, the bones, stays where it lies."""
+    for k, part in enumerate(parts):
+        pm = MB(seed + k)
+        part(pm)
+        pm.build(f"{name}_piece_{k}", parent=ob, ao=0.5, ground=False, **look)
+
+
+# The Meridian's wreckage. Every throw of the hook tears a piece off: a node's
+# uses (src/data/nodes.ts) share its pieces out between them, top first.
+
+
 def driftwood():
-    """A bleached log with its root flare, a crossing branch and a few sticks."""
-    m = MB(11)
+    """A broken yard from the Meridian's rigging, iron-banded, lying in a tangle.
+    The yard stays; the snapped topmast across it, a block with its coiled
+    rigging, a lashed bundle of planks and the yard's broken arm come away."""
     rnd = random.Random(11)
-    pts, radii = [], []
-    for i in range(10):
-        t = i / 9
-        pts.append((-1.3 + t * 2.75, 0.22 - t * 0.09 + math.sin(t * 2.6) * 0.035, math.sin(t * 2.1 + 0.3) * 0.2))
-        radii.append(0.23 - 0.15 * t ** 0.8)
-    m.tube(pts, radii, mat=P["driftwood"], segs=9)
-    # Root flare: short tapering roots splayed back and out from the thick end.
-    for k in range(7):
-        a = k / 7 * TAU + rnd.random() * 0.5
-        L = 0.4 + rnd.random() * 0.35
-        base = (-1.25, 0.22, 0.04)
-        tip = (base[0] - 0.25 - rnd.random() * 0.3, max(0.04, base[1] + math.sin(a) * L), base[2] + math.cos(a) * L)
-        mid = ((base[0] + tip[0]) / 2 - 0.05, (base[1] + tip[1]) / 2 + 0.06, (base[2] + tip[2]) / 2)
-        m.tube([base, mid, tip], [0.09, 0.05, 0.012], mat=P["driftwood_dark"] if k % 3 == 0 else P["driftwood"], segs=6)
-    # Broken branch stubs along the trunk.
-    for t, a in ((0.38, 0.9), (0.62, -1.4), (0.8, 0.4)):
-        i = int(t * 9)
-        x, y, z = pts[i]
-        m.tube([(x, y, z), (x + 0.12, y + 0.18 * math.cos(a), z + 0.2 * math.sin(a))], [0.06, 0.03], mat=P["driftwood"], segs=6)
-    # A thinner, darker branch lying across it.
-    m.tube([(-0.2, 0.06, -0.75), (0.15, 0.3, -0.1), (0.35, 0.34, 0.25), (0.7, 0.07, 0.8)], [0.07, 0.065, 0.06, 0.045], mat=P["driftwood_dark"], segs=7)
-    # Sticks.
-    for k in range(4):
-        x, z = 0.5 + rnd.random() * 0.8, (rnd.random() - 0.5) * 1.3
-        a = rnd.random() * TAU
-        L = 0.4 + rnd.random() * 0.3
-        m.tube([(x, 0.035, z), (x + math.cos(a) * L, 0.03, z + math.sin(a) * L)], [0.03, 0.018], mat=P["driftwood"], segs=5)
-    m.rock(0.22, at=(1.05, 0.0, -0.45), mat=P["rock"], seed=4, squash=0.55)
-    m.rock(0.14, at=(-0.6, 0.0, 0.55), mat=P["rock_dark"], seed=5, squash=0.6)
-    m.build("PROP_driftwood", loc=place())
+    bones = MB(11)
+    ts = [k / 8 for k in range(9)]
+    pts = [(-1.6 + t * 3.0, 0.21 + 0.03 * math.sin(t * 3.0), 0.06 * math.sin(t * 2.2)) for t in ts]
+    bones.tube(pts, [0.2 - 0.07 * abs(t - 0.5) * 2 for t in ts], mat=P["driftwood"], segs=9)
+    for x in (-1.0, -0.05, 0.9):
+        bones.ring(0.21, 0.025, at=(x, 0.21, 0.0), mat=P["rust"], roll=ACROSS, segs=12, tube_segs=4)
+    # Its snapped end: splinters of paler wood.
+    for k in range(6):
+        a = k / 6 * TAU
+        bones.box((0.18 + rnd.random() * 0.2, 0.05, 0.05), at=(1.42 + 0.05 * rnd.random(), 0.21 + math.sin(a) * 0.1, math.cos(a) * 0.1), mat=P["timber_pale"], yaw=(rnd.random() - 0.5) * 0.4, bev=0)
+    bones.rock(0.22, at=(1.05, 0.0, -0.55), mat=P["rock"], seed=4, squash=0.55)
+    bones.rock(0.15, at=(-0.9, 0.0, 0.6), mat=P["rock_dark"], seed=5, squash=0.6)
+    seaweed_clump(bones, rnd, (-1.3, 0.0, -0.3), count=3, length=0.5)
+    ob = bones.build("PROP_driftwood", loc=place())
+
+    def topmast(m):
+        m.tube([(-0.9, 0.06, -0.85), (0.0, 0.46, -0.05), (0.75, 0.38, 0.65)], [0.12, 0.11, 0.09], mat=P["driftwood_dark"], segs=8)
+        m.ring(0.125, 0.02, at=(-0.45, 0.26, -0.45), mat=P["rust"], roll=ACROSS, yaw=-0.75, segs=10, tube_segs=4)
+
+    def rigging(m):
+        m.box((0.2, 0.32, 0.14), at=(-0.35, 0.4, 0.3), mat=P["timber"], roll=0.3, bev=0.02)
+        m.ring(0.08, 0.02, at=(-0.35, 0.56, 0.3), mat=P["iron"], segs=10, tube_segs=4)
+        for k in range(4):
+            m.ring(0.26 - k * 0.035, 0.022, at=(0.3, 0.42 + k * 0.035, 0.42), mat=P["rope"], segs=14, tube_segs=4)
+        m.tube([(-0.35, 0.45, 0.3), (0.0, 0.45, 0.42), (0.2, 0.44, 0.45)], 0.02, mat=P["rope"], segs=4)
+
+    def planks(m):
+        for k in range(3):
+            m.plank(1.5, 0.22, 0.05, at=(0.15, 0.48 + k * 0.055, -0.35 + k * 0.03), mat=P["timber"] if k % 2 else P["timber_light"], yaw=0.5 + k * 0.05, warp=0.03)
+        for x in (-0.35, 0.55):
+            m.box((0.05, 0.22, 0.3), at=(0.15 + x * math.cos(0.5), 0.45, -0.3 - x * math.sin(0.5)), mat=P["rope"], yaw=0.5, bev=0.01)
+
+    def arm(m):
+        m.tube([(-0.2, 0.1, 0.75), (0.7, 0.13, 0.95), (1.5, 0.08, 1.1)], [0.14, 0.12, 0.1], mat=P["driftwood"], segs=8)
+        m.ring(0.145, 0.022, at=(0.3, 0.12, 0.85), mat=P["rust"], roll=ACROSS, yaw=-0.25, segs=10, tube_segs=4)
+
+    pieces(ob, "spars", (topmast, rigging, planks, arm), 12)
 
 
 def scrap_pile():
-    """Rusted junk: crumpled plates, a corrugated sheet, a gear, a bent pipe, chain."""
-    m = MB(2)
+    """Machinery the sea broke out of her, rusted in a heap on a bed of grit.
+    The cracked bedplate stays; the winch drum on top, a bent pipe run, a stack
+    of crumpled plates and a cog with its valve wheel come away."""
     rnd = random.Random(2)
     paint_scrap = Paint(P["paint_blue"].mat, 0x4F6E6A)
-    # A low bed of grit and pebbles the junk has settled into.
-    m.lathe([(0.0, 0.07), (0.5, 0.06), (0.85, 0.02), (1.0, -0.03)], mat=Paint(P["sand"].mat, 0x7D7262), segs=16)
+    bones = MB(2)
+    bones.lathe([(0.0, 0.07), (0.5, 0.06), (0.85, 0.02), (1.0, -0.03)], mat=Paint(P["sand"].mat, 0x7D7262), segs=16)
     for i in range(8):
         a = rnd.random() * TAU
         r = 0.6 + rnd.random() * 0.35
-        m.rock(0.05 + rnd.random() * 0.05, at=(math.cos(a) * r, 0.0, math.sin(a) * r), mat=P["rock_dark"], seed=60 + i, squash=0.6, cuts=2, subdiv=1)
-    # Crumpled plates, stacked and tipped, resting on each other.
-    plates = (P["iron"], P["rust"], paint_scrap, P["iron_light"], P["rust"], P["iron"])
-    for i, mat in enumerate(plates):
-        w, d = 0.55 + rnd.random() * 0.55, 0.4 + rnd.random() * 0.45
-        m.box((w, 0.035, d), at=((rnd.random() - 0.5) * 0.8, 0.09 + i * 0.05, (rnd.random() - 0.5) * 0.6), mat=mat,
-              yaw=rnd.random() * 3, pitch=(rnd.random() - 0.5) * 0.3, roll=(rnd.random() - 0.5) * 0.3, centered=True, bev=0.008)
-    # A corrugated sheet leaning on the heap.
-    wave = [(-0.6 + k * 0.1, 0.035 * (1 if k % 2 else -1)) for k in range(13)]
-    outline = wave + [(x, y - 0.025) for x, y in reversed(wave)]
-    m.prism(outline, 0.9, at=(0.3, 0.36, -0.3), mat=P["rust"], yaw=0.5, roll=0.5, bev=0)
-    # A cog leaning against it, and a valve wheel lying on top.
-    teeth = []
-    for k in range(32):
-        a = k / 32 * TAU
-        r = 0.3 if (k // 2) % 2 else 0.25
-        teeth.append((math.cos(a) * r, math.sin(a) * r))
-    m.prism(teeth, 0.06, at=(-0.48, 0.33, 0.22), mat=P["iron_light"], yaw=0.4, pitch=-0.35, bev=0.006)
-    m.cyl(0.08, 0.08, 0.09, at=(-0.48, 0.33, 0.22), mat=P["rust"], segs=8, pitch=math.pi / 2 - 0.35, yaw=0.4, centered=True)
-    m.ring(0.2, 0.022, at=(0.05, 0.42, 0.1), mat=P["iron"], segs=16, tube_segs=4, pitch=0.12)
-    for k in range(4):
-        a = k / 4 * TAU
-        m.tube([(0.05, 0.42, 0.1), (0.05 + math.cos(a) * 0.2, 0.42 + math.sin(a) * 0.02, 0.1 + math.sin(a) * 0.2)], 0.014, mat=P["iron"], segs=4)
-    # A bent pipe with a flange, sticking out of the heap.
-    m.tube([(0.1, 0.12, 0.5), (0.5, 0.14, 0.45), (0.74, 0.24, 0.2), (0.8, 0.52, 0.05)], 0.06, mat=P["iron_light"], segs=8)
-    m.ring(0.07, 0.022, at=(0.8, 0.52, 0.05), mat=P["rust"], segs=10, tube_segs=4)
-    chain(m, (-0.35, 0.36, -0.15), (0.35, 0.44, 0.28), sag=0.1)
-    m.build("PROP_scrap_pile", loc=place(), grime=0.25)
+        bones.rock(0.05 + rnd.random() * 0.05, at=(math.cos(a) * r, 0.0, math.sin(a) * r), mat=P["rock_dark"], seed=60 + i, squash=0.6, cuts=2, subdiv=1)
+    # The bedplate: an iron slab with its bolting flange, cracked across.
+    for x0, x1 in ((-0.7, -0.04), (0.02, 0.7)):
+        bones.box((x1 - x0, 0.12, 0.9), at=((x0 + x1) / 2, 0.06, 0.0), mat=P["iron"], roll=(0.04 if x0 < 0 else -0.05), bev=0.01)
+    for x in (-0.6, -0.2, 0.2, 0.6):
+        for z in (-0.38, 0.38):
+            bones.cyl(0.025, 0.025, 0.05, at=(x, 0.18, z), mat=P["rust"], segs=6, bev=0)
+    ob = bones.build("PROP_scrap_pile", loc=place(), grime=0.25)
+
+    def drum(m):
+        m.cyl(0.22, 0.22, 0.7, at=(0.0, 0.48, 0.0), mat=P["rust"], segs=14, roll=ACROSS, centered=True)
+        for x in (-0.36, 0.36):
+            m.cyl(0.32, 0.32, 0.05, at=(x, 0.48, 0.0), mat=P["iron"], segs=16, roll=ACROSS, centered=True, bev=0.008)
+        for x in (-0.33, 0.33):
+            m.box((0.05, 0.36, 0.12), at=(x, 0.18, 0.0), mat=P["iron_light"], bev=0.01)
+        m.tube([(0.39, 0.48, 0.0), (0.5, 0.48, 0.0), (0.5, 0.72, 0.12), (0.62, 0.72, 0.12)], 0.025, mat=P["iron_light"], segs=6)
+        m.ring(0.2, 0.015, at=(0.0, 0.48, 0.0), mat=P["rope"], roll=ACROSS, segs=14, tube_segs=4)
+
+    def pipe(m):
+        m.tube([(0.1, 0.15, 0.5), (0.5, 0.17, 0.45), (0.74, 0.27, 0.2), (0.8, 0.55, 0.05)], 0.06, mat=P["iron_light"], segs=8)
+        m.ring(0.07, 0.022, at=(0.8, 0.55, 0.05), mat=P["rust"], segs=10, tube_segs=4)
+        m.ring(0.075, 0.02, at=(0.1, 0.15, 0.5), mat=P["rust"], segs=10, tube_segs=4, pitch=ACROSS)
+
+    def plates(m):
+        for i, mat in enumerate((P["iron"], P["rust"], paint_scrap, P["iron_light"])):
+            w, d = 0.55 + rnd.random() * 0.45, 0.4 + rnd.random() * 0.35
+            m.box((w, 0.035, d), at=(-0.35 + (rnd.random() - 0.5) * 0.3, 0.15 + i * 0.05, -0.25 + (rnd.random() - 0.5) * 0.3), mat=mat,
+                  yaw=rnd.random() * 3, pitch=(rnd.random() - 0.5) * 0.3, roll=(rnd.random() - 0.5) * 0.3, centered=True, bev=0.008)
+        wave = [(-0.5 + k * 0.1, 0.035 * (1 if k % 2 else -1)) for k in range(11)]
+        m.prism(wave + [(x, y - 0.025) for x, y in reversed(wave)], 0.8, at=(-0.3, 0.38, -0.35), mat=P["rust"], yaw=0.5, roll=0.5, bev=0)
+
+    def cog(m):
+        teeth = [(math.cos(k / 32 * TAU) * (0.3 if (k // 2) % 2 else 0.25), math.sin(k / 32 * TAU) * (0.3 if (k // 2) % 2 else 0.25)) for k in range(32)]
+        m.prism(teeth, 0.06, at=(-0.5, 0.36, 0.3), mat=P["iron_light"], yaw=0.4, pitch=-0.35, bev=0.006)
+        m.cyl(0.08, 0.08, 0.09, at=(-0.5, 0.36, 0.3), mat=P["rust"], segs=8, pitch=math.pi / 2 - 0.35, yaw=0.4, centered=True)
+        m.ring(0.2, 0.022, at=(0.35, 0.2, -0.45), mat=P["iron"], segs=16, tube_segs=4, pitch=0.12)
+        for k in range(4):
+            a = k / 4 * TAU
+            m.tube([(0.35, 0.2, -0.45), (0.35 + math.cos(a) * 0.2, 0.2 + math.sin(a) * 0.02, -0.45 + math.sin(a) * 0.2)], 0.014, mat=P["iron"], segs=4)
+
+    pieces(ob, "machinery", (drum, pipe, plates, cog), 3, grime=0.25)
 
 
 def kelp_bed():
-    """A wet boulder with olive-brown kelp flopped over it and out across the sand."""
-    m = MB(3)
+    """Wet boulders with a ship's cable draped over them, kelp hanging thick off
+    both. The rocks and the cable stay; the kelp comes away in three hauls."""
     rnd = random.Random(3)
-    m.rock(0.55, at=(0, -0.05, 0), mat=P["rock_dark"], seed=8, squash=0.5)
-    m.rock(0.3, at=(0.55, -0.05, 0.3), mat=P["rock_dark"], seed=9, squash=0.45)
-    # Fronds: stipe up over the rock, then a long ribbon blade lying out.
-    for i in range(11):
-        a = i / 11 * TAU + rnd.random() * 0.4
-        L = 1.0 + rnd.random() * 0.7
-        base = (math.cos(a) * 0.15, 0.32, math.sin(a) * 0.12)
-        pts = [base]
-        for k in range(1, 8):
-            t = k / 7
-            r = 0.15 + t * L
-            pts.append((math.cos(a + math.sin(t * 5 + i) * 0.12) * r, max(0.03, 0.32 + 0.12 * math.sin(t * math.pi * 0.8) - t * 0.42), math.sin(a + math.sin(t * 4 + i) * 0.12) * r))
-        widths = [0.04, 0.09, 0.15, 0.17, 0.17, 0.15, 0.11, 0.04]
-        ribbon(m, pts, widths, KELP[i % len(KELP)])
-        # Gas bladders along the stipe.
-        for k in (1, 2):
-            x, y, z = pts[k]
-            m.sphere(0.035, at=(x, y + 0.02, z), mat=KELP[2], scale=(1.0, 0.8, 1.3), subdiv=1)
-    seaweed_clump(m, rnd, (-0.4, 0.0, 0.5), count=4, length=0.6)
-    m.build("PROP_kelp_bed", loc=place(), grime=0.1)
+    bones = MB(3)
+    bones.rock(0.55, at=(0, -0.05, 0), mat=P["rock_dark"], seed=8, squash=0.5)
+    bones.rock(0.3, at=(0.55, -0.05, 0.3), mat=P["rock_dark"], seed=9, squash=0.45)
+    bones.tube([(-1.3, 0.04, 0.5), (-0.4, 0.3, 0.15), (0.3, 0.36, -0.1), (1.0, 0.18, -0.35), (1.6, 0.03, -0.3)], 0.07, mat=Paint(P["rope"].mat, 0x3E3427), segs=6)
+    seaweed_clump(bones, rnd, (-0.4, 0.0, 0.5), count=3, length=0.5)
+    ob = bones.build("PROP_kelp_bed", loc=place(), grime=0.1)
+
+    def bunch(start, angle):
+        def draw(m):
+            for i in range(4):
+                a = angle + (i - 1.5) * 0.45 + rnd.random() * 0.2
+                L = 1.0 + rnd.random() * 0.6
+                base = (start[0] + math.cos(a) * 0.08, start[1], start[2] + math.sin(a) * 0.08)
+                pts = [base]
+                for k in range(1, 8):
+                    t = k / 7
+                    r = t * L
+                    pts.append((base[0] + math.cos(a + math.sin(t * 5 + i) * 0.12) * r, max(0.03, base[1] + 0.1 * math.sin(t * math.pi * 0.8) - t * (base[1] + 0.05)), base[2] + math.sin(a + math.sin(t * 4 + i) * 0.12) * r))
+                ribbon(m, pts, [0.04, 0.09, 0.15, 0.17, 0.17, 0.15, 0.11, 0.04], KELP[(i + int(angle * 3)) % len(KELP)])
+                for k in (1, 2):
+                    x, y, z = pts[k]
+                    m.sphere(0.035, at=(x, y + 0.02, z), mat=KELP[2], scale=(1.0, 0.8, 1.3), subdiv=1)
+        return draw
+
+    pieces(ob, "kelp", (bunch((0.1, 0.36, -0.05), 0.4), bunch((-0.35, 0.3, 0.15), 2.5), bunch((0.6, 0.22, -0.2), 4.6)), 4, grime=0.1)
 
 
 def reinforced_wreckage():
-    """A torn-off piece of hull leaning back: tarred strakes on two frames,
-    iron knees, brass bolts and a brass porthole. The brass is why you come."""
-    m = MB(6)
+    """A torn-off piece of hull leaning back: tarred strakes on two frames, iron
+    straps, brass bolts and a brass porthole. The frames and the lowest strakes
+    stay; the hook strips it from the top, and the brass is why you come."""
     rnd = random.Random(6)
     th = 0.32  # lean back from vertical
 
@@ -254,35 +295,45 @@ def reinforced_wreckage():
         """Point on the leaning panel: u across, v up its face, w out of it."""
         return (u, v * math.cos(th) + w * math.sin(th), -v * math.sin(th) + w * math.cos(th))
 
-    # Frames behind the planking.
-    for x in (-0.75, 0.75):
-        m.box((0.16, 1.8, 0.18), at=panel(x, 0.9, -0.13), mat=P["hull_dark"], pitch=-th, centered=True)
-    # Strakes, each a little proud of the one below; a ragged top edge.
-    for i in range(6):
+    def strake(m, i):
         v = 0.14 + i * 0.27
         w = 2.3 - (0.9 * rnd.random() if i == 5 else 0.25 * rnd.random())
         off = (rnd.random() - 0.5) * 0.25 + (0.35 if i == 5 else 0.0)
         m.box((w, 0.26, 0.07), at=panel(off, v, 0.0 + (i % 2) * 0.012), mat=P["hull"] if i % 2 else P["hull_dark"], pitch=-th, roll=(rnd.random() - 0.5) * 0.03, centered=True, jit=0.08)
-    # Snapped strake ends at the top, showing paler wood where they broke.
-    for x, v, ang in ((-0.95, 1.6, 0.35), (0.95, 1.52, -0.5)):
-        m.box((0.45, 0.2, 0.07), at=panel(x, v, 0.01), mat=P["hull"], pitch=-th, roll=ang, centered=True)
-        m.box((0.06, 0.16, 0.06), at=panel(x + math.copysign(0.24, ang) * -1, v + 0.06, 0.01), mat=P["timber_pale"], pitch=-th, roll=ang * 1.5, centered=True, bev=0)
-    # Iron straps over the frames, brass bolts through them.
+
+    bones = MB(6)
     for x in (-0.75, 0.75):
-        m.box((0.11, 1.55, 0.025), at=panel(x, 0.85, 0.05), mat=P["iron"], pitch=-th, centered=True, bev=0.004)
-        for k in range(5):
-            m.cyl(0.027, 0.022, 0.03, at=panel(x, 0.25 + k * 0.3, 0.07), mat=P["brass"], segs=8, pitch=math.pi / 2 - th, centered=True, bev=0)
-    # The porthole: brass rim, blue-grey glass, gilt bolts round it.
-    m.cyl(0.24, 0.24, 0.07, at=panel(0.1, 0.86, 0.05), mat=P["brass"], segs=18, pitch=math.pi / 2 - th, centered=True)
-    m.cyl(0.17, 0.17, 0.09, at=panel(0.1, 0.86, 0.05), mat=P["glass_blue"], segs=18, pitch=math.pi / 2 - th, centered=True)
-    for k in range(8):
-        a = k / 8 * TAU
-        m.sphere(0.022, at=panel(0.1 + math.cos(a) * 0.205, 0.86 + math.sin(a) * 0.205, 0.09), mat=P["gilt"], subdiv=1)
-    # A brass cleat and a hinge plate.
-    m.box((0.34, 0.06, 0.07), at=panel(-0.4, 1.3, 0.07), mat=P["brass"], pitch=-th, centered=True, bev=0.012)
-    m.box((0.2, 0.15, 0.02), at=panel(0.62, 0.45, 0.05), mat=P["brass"], pitch=-th, centered=True, bev=0.004)
-    barnacles(m, rnd, panel(0.0, 0.2, 0.05), (1.0, 0.1, 0.03), 16, up=(0, math.sin(th), math.cos(th)), size=0.035)
-    m.build("PROP_reinforced_wreckage", loc=place(), grime=0.3)
+        bones.box((0.16, 1.8, 0.18), at=panel(x, 0.9, -0.13), mat=P["hull_dark"], pitch=-th, centered=True)
+    for i in range(2):
+        strake(bones, i)
+    barnacles(bones, rnd, panel(0.0, 0.2, 0.05), (1.0, 0.1, 0.03), 16, up=(0, math.sin(th), math.cos(th)), size=0.035)
+    ob = bones.build("PROP_reinforced_wreckage", loc=place(), grime=0.3)
+
+    def top(m):
+        for i in (4, 5):
+            strake(m, i)
+        for x, v, ang in ((-0.95, 1.6, 0.35), (0.95, 1.52, -0.5)):
+            m.box((0.45, 0.2, 0.07), at=panel(x, v, 0.01), mat=P["hull"], pitch=-th, roll=ang, centered=True)
+            m.box((0.06, 0.16, 0.06), at=panel(x + math.copysign(0.24, ang) * -1, v + 0.06, 0.01), mat=P["timber_pale"], pitch=-th, roll=ang * 1.5, centered=True, bev=0)
+        m.box((0.34, 0.06, 0.07), at=panel(-0.4, 1.3, 0.07), mat=P["brass"], pitch=-th, centered=True, bev=0.012)
+
+    def straps(m):
+        for x in (-0.75, 0.75):
+            m.box((0.11, 1.55, 0.025), at=panel(x, 0.85, 0.05), mat=P["iron"], pitch=-th, centered=True, bev=0.004)
+            for k in range(5):
+                m.cyl(0.027, 0.022, 0.03, at=panel(x, 0.25 + k * 0.3, 0.07), mat=P["brass"], segs=8, pitch=math.pi / 2 - th, centered=True, bev=0)
+        m.box((0.2, 0.15, 0.02), at=panel(0.62, 0.45, 0.05), mat=P["brass"], pitch=-th, centered=True, bev=0.004)
+
+    def porthole(m):
+        for i in (2, 3):
+            strake(m, i)
+        m.cyl(0.24, 0.24, 0.07, at=panel(0.1, 0.86, 0.05), mat=P["brass"], segs=18, pitch=math.pi / 2 - th, centered=True)
+        m.cyl(0.17, 0.17, 0.09, at=panel(0.1, 0.86, 0.05), mat=P["glass_blue"], segs=18, pitch=math.pi / 2 - th, centered=True)
+        for k in range(8):
+            a = k / 8 * TAU
+            m.sphere(0.022, at=panel(0.1 + math.cos(a) * 0.205, 0.86 + math.sin(a) * 0.205, 0.09), mat=P["gilt"], subdiv=1)
+
+    pieces(ob, "plating", (top, straps, porthole), 7, grime=0.3)
 
 
 def slatted_crate(m, size, at=(0, 0, 0), wood=None, frame=None, gap=0.012, yaw=0.0, slats=3):

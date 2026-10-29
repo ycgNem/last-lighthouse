@@ -62,7 +62,7 @@ export class GatherNode {
         obj.rotation.y = marker.yaw;
         ctx.scene.add(obj);
       }
-      collapseMaterials(obj);
+      collapseMaterials(obj, true);
       this.object = obj;
       this.range = 3.4;
     }

@@ -54,7 +54,8 @@ export const HORIZON: Record<LocationId, readonly HorizonPiece[]> = {
     { piece: "stack", x: -106, z: -20 },
     { piece: "masts", x: 30, z: 100, turn: 1.2 },
     { piece: "headland", x: 132, z: 86 },
-    { piece: "windmill", x: -10, z: 116 },
+    // Clear of the sea arch south of the arena, which frames the Guardian.
+    { piece: "windmill", x: -48, z: 110 },
     { piece: "buoy", x: 70, z: 56 },
   ],
 };

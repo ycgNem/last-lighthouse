@@ -50,7 +50,8 @@ import { readTide, tideEvents, type TideReading } from "../systems/tide";
 import { Hud, type CompassMarker, type HudView, type KeyLabels } from "../ui/Hud";
 import { Menus, type MenuKind } from "../ui/Menus";
 import { HomeLevel } from "../world/home/HomeLevel";
-import type { Level, LevelInteract } from "../world/Level";
+import type { PieceBatch } from "../world/Batch";
+import { buoyShadows, type Level, type LevelInteract } from "../world/Level";
 import { GloomPocket } from "../world/Gloom";
 import { Gulls } from "../world/Gulls";
 import { LevelHeights } from "../world/Heights";
@@ -151,8 +152,9 @@ export class Game implements GameContext {
   private hook: Hook | null = null;
   /** The cove's drift: home only. */
   private flotsam: Flotsam | null = null;
-  /** Wreckage the hook tears at, here. */
+  /** Wreckage the hook tears at, here, and those built in pieces drawn merged. */
   private wrecks: Wreck[] = [];
+  private wreckBatch: PieceBatch | null = null;
   /** Build mode at home (B): the piece in hand (an index into DECOR_IDS) and its turn. Null when not building. */
   private building: { index: number; yaw: number } | null = null;
   private lastDecor = 0;
@@ -886,13 +888,14 @@ export class Game implements GameContext {
     this.sfx.fire();
   }
 
-  /** Only creatures and loot near you cast shadows (PERF.shadowNear). */
+  /** Only creatures, loot and what floats near you cast shadows (PERF.shadowNear). */
   private shadowLod(): void {
     const p = this.player.position;
     const near = PERF.shadowNear * PERF.shadowNear;
     for (const e of this.encounters.enemies) e.castShadows(e.position.distanceToSquared(p) < near);
     for (const n of this.nodes) n.castShadows(n.position.distanceToSquared(p) < near);
     for (const w of this.wrecks) w.castShadows(w.at.distanceToSquared(p) < near);
+    buoyShadows(this.level.buoys, p, near);
   }
 
   /** Q: the Keeper's Lantern flares. Enemies in the cone reel; Gloom pockets in reach burn away. */
@@ -1226,6 +1229,7 @@ export class Game implements GameContext {
     // Wreckage is the hook's; everything else (crates, fishing, the lens) is E's.
     this.nodes = level.nodes.filter((m) => NODES[m.node].kind !== "wreckage").map((m) => new GatherNode(m.node, m, this));
     this.wrecks = level.nodes.filter((m) => NODES[m.node].kind === "wreckage").map((m) => new Wreck(m.node, m, this, level === this.home));
+    this.wreckBatch = Wreck.drawMerged(this.wrecks, this.scene);
     this.flotsam = level === this.home ? new Flotsam(this, level.points) : null;
     this.encounters = new Encounters(level.enemies);
     this.encounters.sync(this);
@@ -1298,6 +1302,8 @@ export class Game implements GameContext {
     this.nodes = [];
     for (const w of this.wrecks) w.dispose();
     this.wrecks = [];
+    this.wreckBatch?.dispose();
+    this.wreckBatch = null;
     this.flotsam?.dispose();
     this.flotsam = null;
     this.hook?.reset();

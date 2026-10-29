@@ -18,10 +18,10 @@ primitive placeholder of the same size. Tri budgets are targets, not hard limits
 | [x] | Tide Lurker | `enemies.glb` | jaw, surfaces from the water |
 | [x] | Wreck Guardian | `enemies.glb` | arms, heart-lantern weak point |
 | [x] | Lantern's Rest | `locations/home.glb` (`home_map.py`, from `home.blend`'s `HOME_` models) | knoll, village terrace, quay, cove with beach, flats, wreck field and rock arms; every plot as a ruin and a finished building; boats; the people are Polyfork characters |
-| [x] | Wreck of the Meridian | `locations/wreck.glb` | hull, hold, deck, chart room, fallen mast, floating crates, reef |
-| [x] | Saltmere Beacon | `locations/beacon.glb` | causeway, gate, ring arena, stair, beacon tower |
+| [x] | Wreck of the Meridian | `locations/wreck.glb` | hull, hold, deck, chart room, fallen mast; the islet with its camp and reef beacon, the reef and its rampart, the cargo jam, the cargo spill, an old hulk |
+| [x] | Saltmere Beacon | `locations/beacon.glb` | the stack, its cleft stair and the beacon tower; the old landing stage (sheds, crane, sea wall), gate, breakwater, quay and boathouse, the sea arch |
 | [x] | Nodes, tide pole, buoy crate, rope ladder, rowboat, signpost, lantern post, barrel, hull ribs, dune grass, beacon lamp, lens pedestal | `props.glb` (`PROP_<id>`) | |
-| [x] | Drift (planks, drum, kelp mat, bottles, barrel, log, ship's crate); the cove's wrecks in tearable pieces (boat, pilings, boiler); decor pieces; plot boards | `props.glb` (`PROP_flot_<kind>`, `PROP_wreck_<name>`, `PROP_decor_<kind>`, `PROP_plot_board`) | wrecks come apart by their `*_piece_<n>` parts |
+| [x] | Drift (planks, drum, kelp mat, bottles, barrel, log, ship's crate); the cove's wrecks in tearable pieces (boat, pilings, boiler) and the Meridian's (spars, machinery, kelp, brass-strapped plating); decor pieces; plot boards | `props.glb` (`PROP_flot_<kind>`, `PROP_wreck_<name>`, `PROP_<node id>`, `PROP_decor_<kind>`, `PROP_plot_board`) | wrecks come apart by their `*_piece_<n>` parts |
 | [ ] | Chart table | — | the chart is a menu for now, opened from the boat |
 | [x] | NPC models (Maren, Tib, Odile, Hesk, two families) | [Polyfork](https://polyfork.dev), hotlinked (`src/data/villagers.ts`) | simple figures in code when offline |
 | [ ] | Upgrade-quality art pass on everything | — | current art is chunky low-poly |

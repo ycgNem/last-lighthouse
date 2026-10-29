@@ -244,6 +244,18 @@ describe.each(REMOTE)("tide sweep: %s", (id) => {
   }, 60_000);
 });
 
+describe("tide sweep: beacon", () => {
+  it("the tower can't be reached until the Guardian falls (the rubble is the only thing in the way)", async () => {
+    const level = await loadLevel("beacon");
+    const beacon = level.interacts.find((it) => it.id === "beacon")!;
+    const at = beacon.object.getWorldPosition(new THREE.Vector3());
+    level.applyFlags([]);
+    expect(sweep(level).within(at, beacon.range + 0.6)).toBe(false);
+    level.applyFlags(["guardian_defeated"]);
+    expect(sweep(level).within(at, beacon.range + 0.6)).toBe(true);
+  }, 60_000);
+});
+
 /** Lantern's Rest as a save leaves it (HomeLevel.applyProgress): every plot `progress` of the way rebuilt, the boats moored once the jetty stands. */
 async function rest(progress: number): Promise<{ level: GlbLevel; plots: Plot[]; r: ReturnType<typeof sweep> }> {
   const level = await loadLevel("home");

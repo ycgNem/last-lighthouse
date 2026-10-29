@@ -57,7 +57,7 @@ export const LOCATIONS: Record<LocationId, LocationDef> = {
   },
   wreck: {
     name: "Wreck of the Meridian",
-    blurb: "A beached steamship. Low tide opens the hull; high tide lifts the cargo to the rail.",
+    blurb: "A steamship driven onto a reef. Low tide bares the way into her hull; high tide floats her cargo up to the rail.",
     revealedAtStage: 1,
     safe: false,
     model: "locations/wreck.glb",
@@ -82,7 +82,7 @@ export const LOCATIONS: Record<LocationId, LocationDef> = {
   },
   beacon: {
     name: "Saltmere Beacon",
-    blurb: "The first of the outlying lights. Something vast sleeps in the water around it.",
+    blurb: "The first of the outlying lights, on a sea stack above an old landing stage. Something vast sleeps in the water below it.",
     revealedAtStage: 2,
     safe: false,
     model: "locations/beacon.glb",

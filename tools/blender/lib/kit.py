@@ -131,6 +131,66 @@ def fbm3(x, y, z, seed=0, octaves=3):
     return total / norm
 
 
+def smax(a, b, k):
+    """Smooth max: the larger of two heights, rounded over where they're within k of each other."""
+    h = max(k - abs(a - b), 0.0) / k
+    return max(a, b) + h * h * k * 0.25
+
+
+def mix(a, b, t):
+    """Blends two 0xRRGGBB colours."""
+    t = max(0.0, min(1.0, t))
+    out = 0
+    for sh in (16, 8, 0):
+        ca, cb = (a >> sh) & 255, (b >> sh) & 255
+        out |= int(round(ca + (cb - ca) * t)) << sh
+    return out
+
+
+def turn(yaw, lx, lz):
+    """A local (x, z) offset turned by yaw, the way three.js turns rotation.y."""
+    c, s = math.cos(yaw), math.sin(yaw)
+    return lx * c + lz * s, -lx * s + lz * c
+
+
+def facing(dx, dz):
+    """The yaw that turns a model's front (+Z) toward (dx, dz)."""
+    return math.atan2(dx, dz)
+
+
+def look(dx, dz):
+    """The yaw for a spawn whose view looks toward (dx, dz) (a camera looks down its -Z)."""
+    return math.atan2(-dx, -dz)
+
+
+def poly_sd(px, pz, poly):
+    """Signed distance to a closed polygon (negative inside) and the nearest edge."""
+    best, edge, inside = 1e9, 0, False
+    n = len(poly)
+    for i in range(n):
+        ax, az = poly[i]
+        bx, bz = poly[(i + 1) % n]
+        d = seg_dist(px, pz, ax, az, bx, bz)
+        if d < best:
+            best, edge = d, i
+        if (az > pz) != (bz > pz) and px < ax + (pz - az) * (bx - ax) / (bz - az):
+            inside = not inside
+    return (-best if inside else best), edge
+
+
+def along(px, pz, pts):
+    """Nearest point on a polyline of (x, z, y): its distance, its y and how far along (segments)."""
+    best = (1e9, 0.0, 0.0)
+    for i, ((ax, az, ay), (bx, bz, by)) in enumerate(zip(pts, pts[1:])):
+        dx, dz = bx - ax, bz - az
+        L2 = dx * dx + dz * dz
+        t = max(0.0, min(1.0, ((px - ax) * dx + (pz - az) * dz) / L2)) if L2 else 0.0
+        d = math.hypot(px - ax - t * dx, pz - az - t * dz)
+        if d < best[0]:
+            best = (d, ay + (by - ay) * t, i + t)
+    return best
+
+
 # ------------------------------------------------------------- materials
 
 
@@ -815,6 +875,207 @@ def terrain(name, x0, x1, z0, z1, step, height, color, mat, props=None, shade=Tr
     for k, v in (props or {}).items():
         ob[k] = v
     return ob
+
+
+# --------------------------------------------------------------- masonry
+# Mortared stone: a dark mortar face with coursed stones a little proud of it,
+# coping slabs over the top. Every wall has a plain collision box behind its
+# face, so the terrain's one-metre step under it never decides where you stop.
+
+
+def slab(m, p, q, h, depth, mat, tint=1.0):
+    """A slab from game point p to q (its top edge's centre line), h thick, depth across."""
+    dx, dy, dz = q[0] - p[0], q[1] - p[1], q[2] - p[2]
+    m.box((math.hypot(dx, dz), h, depth), at=((p[0] + q[0]) / 2, (p[1] + q[1]) / 2 - h / 2, (p[2] + q[2]) / 2), mat=mat,
+          yaw=math.atan2(-dz, dx), roll=math.atan2(dy, math.hypot(dx, dz)), centered=True, bev=0, tint=tint)
+
+
+class Masonry:
+    """Walls drawn into one model (`walls`) and their collision into another
+    (`solids`); build() makes the pair. `rng` lays the stones unless a wall
+    brings its own dice."""
+
+    def __init__(self, P, rng, seeds=(900, 901)):
+        stone = P["stone"].mat
+        self.rng = rng
+        self.walls, self.solids = MB(seeds[0]), MB(seeds[1])
+        self.tar = P["tar"]
+        self.mortar = Paint(stone, 0x57524A)
+        self.coursed = [Paint(stone, c) for c in (0x9C968A, 0x8E887C, 0xA7A194, 0x857F73, 0x948C7C, 0xACA596)]
+        self.copings = [Paint(stone, c) for c in (0xB4AEA1, 0xA8A294, 0xBDB7A9)]
+
+    def face(self, a, b, out, foot, top, rng):
+        """Coursed stone on a vertical face from a to b (x, z). `out` is the face's
+        outward normal (x, z); foot and top are heights at a and at b."""
+        m = self.walls
+        (ax, az), (bx, bz) = a, b
+        L = math.hypot(bx - ax, bz - az)
+        ux, uz = (bx - ax) / L, (bz - az) / L
+        if -uz * out[0] + ux * out[1] < 0:  # walk the face the way that makes its quads look out
+            (ax, az), (bx, bz), ux, uz = (bx, bz), (ax, az), -ux, -uz
+            foot, top = (foot[1], foot[0]), (top[1], top[0])
+        nx, nz = out
+
+        def pt(s, y, pro):
+            return (ax + ux * s + nx * pro, y, az + uz * s + nz * pro)
+
+        def lo(s):
+            return lerp(foot[0], foot[1], s / L)
+
+        def hi(s):
+            return lerp(top[0], top[1], s / L)
+
+        m.quad([pt(0, lo(0), 0), pt(L, lo(L), 0), pt(L, hi(L), 0), pt(0, hi(0), 0)], mat=self.mortar, jit=0.03)
+        y0 = min(foot)
+        while y0 < max(top) - 0.05:
+            ch = 0.28 + rng.random() * 0.17
+            s = -rng.random() * 0.6
+            while s < L:
+                sl = 0.45 + rng.random() * 0.75
+                s0, s1 = max(0.0, s) + 0.022, min(L, s + sl) - 0.022
+                s += sl
+                if s1 - s0 < 0.12:
+                    continue
+                b0, b1 = max(y0 + 0.022, lo(s0)), max(y0 + 0.022, lo(s1))
+                t0, t1 = min(y0 + ch - 0.022, hi(s0) - 0.03), min(y0 + ch - 0.022, hi(s1) - 0.03)
+                if t0 - b0 < 0.06 or t1 - b1 < 0.06:
+                    continue
+                pro = 0.012 + rng.random() * 0.03
+                m.quad([pt(s0, b0, pro), pt(s1, b1, pro), pt(s1, t1, pro), pt(s0, t0, pro)], mat=self.coursed[int(rng.random() * len(self.coursed))], jit=0.06, tint=0.82 + 0.3 * rng.random())
+            y0 += ch
+
+    def coping(self, a, b, out, top, back, rng, over=0.07, thick=0.16):
+        """Coping slabs along a wall's top from a to b, from `back` behind the face to `over` in front."""
+        (ax, az), (bx, bz) = a, b
+        L = math.hypot(bx - ax, bz - az)
+        ux, uz = (bx - ax) / L, (bz - az) / L
+        c = (over - back) / 2
+        s = 0.0
+        while s < L - 0.05:
+            sl = min(0.7 + rng.random() * 0.5, L - s)
+            p = (ax + ux * s + out[0] * c, lerp(top[0], top[1], s / L), az + uz * s + out[1] * c)
+            q = (ax + ux * (s + sl - 0.02) + out[0] * c, lerp(top[0], top[1], (s + sl - 0.02) / L), az + uz * (s + sl - 0.02) + out[1] * c)
+            slab(self.walls, p, q, thick, back + over, self.copings[int(rng.random() * len(self.copings))], tint=0.85 + 0.25 * rng.random())
+            s += sl
+
+    def solid(self, a, b, out, foot, top, back):
+        """The collision behind a wall face: a box hung from its top edge, deep enough to reach its foot."""
+        (ax, az), (bx, bz) = a, b
+        h = max(top[0] - foot[0], top[1] - foot[1]) + 0.3
+        p = (ax - out[0] * back / 2, top[0], az - out[1] * back / 2)
+        q = (bx - out[0] * back / 2, top[1], bz - out[1] * back / 2)
+        slab(self.solids, p, q, h, back, self.tar)
+
+    def retaining(self, a, b, out, foot, top, back=0.95, rng=None):
+        """A retaining wall: face, coping and collision. foot and top are (at a, at b)."""
+        rng = rng or self.rng
+        self.face(a, b, out, foot, top, rng)
+        self.coping(a, b, out, (top[0] + 0.04, top[1] + 0.04), back + 0.1, rng)
+        self.solid(a, b, out, foot, (top[0] + 0.04, top[1] + 0.04), back)
+
+    def parapet(self, a, b, base, rng=None, h=0.9, w=0.45):
+        """A free-standing wall on top of another, faced both sides."""
+        rng = rng or self.rng
+        (ax, az), (bx, bz) = a, b
+        L = math.hypot(bx - ax, bz - az)
+        nx, nz = (bz - az) / L, -(bx - ax) / L
+        for s in (1, -1):
+            o = (nx * s, nz * s)
+            self.face((ax + o[0] * w / 2, az + o[1] * w / 2), (bx + o[0] * w / 2, bz + o[1] * w / 2), o, (base, base), (base + h, base + h), rng)
+        self.coping((ax + nx * w / 2, az + nz * w / 2), (bx + nx * w / 2, bz + nz * w / 2), (nx, nz), (base + h + 0.1, base + h + 0.1), w + 0.07, rng, over=0.05, thick=0.12)
+        slab(self.solids, (ax, base + h + 0.1, az), (bx, base + h + 0.1, bz), h + 0.1, w, self.tar)
+
+    def build(self, name, col_name, **kw):
+        """The walls as `name` (MB.build's look arguments in kw) and their collision as `col_name`."""
+        walls = self.walls.build(name, ground=False, **kw)
+        self.solids.build(col_name, ao=0, grime=0, ground=False)
+        return walls
+
+
+class Boulders:
+    """home.blend's unit boulders (HOME_rock_<n>) set into a level whose ground
+    is `height(x, z)`: bedded in the ground, or, where it falls away, sea rocks
+    stood on the sea floor and stretched up clear of high water. Too tall to
+    climb onto from the water and kept back from the shore (shrunk if they must
+    be), so never a perch to be stranded on."""
+
+    def __init__(self, templates, height, rng, sea_rock=-0.7, gap=1.8, name="rock"):
+        self.templates, self.height, self.rng = templates, height, rng
+        self.sea_rock = sea_rock  # ground lower than this, and a boulder is a sea rock instead
+        self.gap = gap  # the least water between a sea rock and the shore
+        self.name, self.count = name, 0
+
+    def _place(self, kind, at, yaw, scale):
+        place(self.templates, kind, f"{self.name}_{self.count:03d}", at, yaw=yaw, scale=scale, props={"col": 1})
+        self.count += 1
+
+    def sea_room(self, x, z):
+        """How far it is from (x, z) to the nearest ground above the sea floor (up to 9 m)."""
+        for k in range(2, 19):
+            r = k * 0.5
+            for j in range(16):
+                a = j * math.tau / 16
+                if self.height(x + math.cos(a) * r, z + math.sin(a) * r) > self.sea_rock:
+                    return r
+        return 9.0
+
+    def boulder(self, x, z, s, sink=0.4):
+        rng = self.rng
+        kind = f"rock_{int(rng.random() * 6)}"
+        yaw, w, h = rng.random() * math.tau, 0.9 + rng.random() * 0.3, 0.75 + rng.random() * 0.35
+        ground = self.height(x, z)
+        if ground > self.sea_rock:
+            self._place(kind, (x, ground - s * sink, z), yaw, (s * w, s * h, s))
+            return
+        # In clusters with open water between, big and small, not a string of beads.
+        group = noise2(x * 0.22, z * 0.22, 103)
+        if group < -0.15:
+            return
+        box = self.templates[kind].bound_box
+        reach = max(max(abs(c[0]) for c in box) * w, max(abs(c[1]) for c in box))
+        s = min(max(s, 2.4) * (0.7 + 0.9 * group), (self.sea_room(x, z) - self.gap) / reach)
+        if s < 1.4:
+            return
+        lo, hi = min(c[2] for c in box), max(c[2] for c in box)
+        top = HIGH_WATER + 0.5 + 0.6 * (noise2(x * 0.7, z * 0.7, 101) + 1.0)
+        tall = (top - ground) / (hi - lo)
+        self._place(kind, (x, ground - lo * tall, z), yaw, (s * w, tall, s))
+
+    def stack(self, x, z, top, size, sea_floor):
+        """A sea stack: boulders piled and stretched up out of deep water to `top`."""
+        rng = self.rng
+        y, r = self.height(x, z), size
+        for k in range(4):
+            if y > top - 0.6:
+                break
+            kind = f"rock_{int(rng.random() * 6)}"
+            box = self.templates[kind].bound_box
+            lo, hi = min(c[2] for c in box), max(c[2] for c in box)
+            h = min(top - y, (top - sea_floor) * (0.6 if k == 0 else 0.4)) + 0.6
+            tall = h / (hi - lo)
+            self._place(kind, (x + rng.uniform(-0.3, 0.3) * size, y - lo * tall - 0.3, z + rng.uniform(-0.3, 0.3) * size), rng.random() * math.tau,
+                        (r * (0.9 + 0.3 * rng.random()), tall, r))
+            y += h - 0.6
+            r *= 0.7
+
+
+def pave(m, x0, x1, z0, z1, y_of, rng, stones, row=(0.42, 0.62), width=(0.5, 0.95), keep=None, gap=0.035, lift=0.03):
+    """Stone setts in rows across x, each corner on the ground under it."""
+    z = z0
+    while z < z1 - 0.1:
+        rh = min(row[0] + rng.random() * (row[1] - row[0]), z1 - z)
+        x = x0 - rng.random() * width[0]
+        while x < x1:
+            sw = width[0] + rng.random() * (width[1] - width[0])
+            a, b = max(x0, x) + gap, min(x1, x + sw) - gap
+            c, d = z + gap, z + rh - gap
+            x += sw
+            if b - a < 0.15 or (keep and not keep((a + b) / 2, (c + d) / 2)):
+                continue
+            up = lift + rng.random() * 0.025
+            m.quad([(a, y_of(a, c) + up, c), (a, y_of(a, d) + up, d), (b, y_of(b, d) + up, d), (b, y_of(b, c) + up, c)],
+                   mat=stones[int(rng.random() * len(stones))], jit=0.06, tint=0.78 + 0.34 * rng.random())
+        z += rh
 
 
 # ---------------------------------------------------------------- output

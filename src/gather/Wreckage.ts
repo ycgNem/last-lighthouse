@@ -6,7 +6,7 @@ import { FX_COLORS } from "../fx/Effects";
 import type { GameContext } from "../game/Context";
 import { hasGear } from "../systems/progression";
 import { rollYields, roomFor, tearWreck, wreckLeft } from "../systems/salvage";
-import { collapseMaterials } from "../world/Batch";
+import { mergePieces, type PieceBatch } from "../world/Batch";
 import type { NodeMarker } from "../world/Level";
 
 // Wreckage the hook tears at: the cove's wreck field at home (bared at low
@@ -14,7 +14,9 @@ import type { NodeMarker } from "../world/Level";
 // Meridian. Every pull tears a piece off and throws it to you. A wreck built in
 // pieces (its *_piece_<n> children, tools/blender/build/props.py) loses them
 // top first, down to its bones; one made in one piece shrinks as it goes, and
-// is gone once it's spent.
+// is gone once it's spent. Wrecks in pieces are drawn merged, all of a place's
+// together (Wreck.drawMerged()), so tearing a piece off only blanks its
+// triangles.
 
 const PIECE = /_piece_(\d+)$/;
 const tmpV = new THREE.Vector3();
@@ -29,6 +31,9 @@ export class Wreck {
   /** Something left to tear off. */
   live = true;
   private readonly pieces: THREE.Object3D[] = [];
+  /** The place's wrecks drawn merged, and which one this is in it. */
+  private batch: PieceBatch | null = null;
+  private slot = -1;
   /** Its key in the save's cove.wrecks: home's wrecks keep count across visits, and restock with the tide. */
   private readonly key: string;
   private left: number;
@@ -68,7 +73,6 @@ export class Wreck {
     };
     collect(obj);
     this.pieces = found.sort((a, b) => a[0] - b[0]).map(([, o]) => o);
-    collapseMaterials(obj);
     obj.updateWorldMatrix(true, true);
     const box = new THREE.Box3().setFromObject(obj);
     box.getCenter(this.at);
@@ -77,6 +81,25 @@ export class Wreck {
     this.scale0 = obj.scale.clone();
     this.left = this.def.uses;
     this.refresh(ctx);
+  }
+
+  /**
+   * Draws a place's wrecks built in pieces merged, a few calls for all of them
+   * (see mergePieces()), with the merged meshes in `scene`. Dispose the batch
+   * with the wrecks.
+   */
+  static drawMerged(wrecks: readonly Wreck[], scene: THREE.Object3D): PieceBatch {
+    const inPieces = wrecks.filter((w) => w.pieces.length);
+    // The batch hides what it merged mesh by mesh; a piece hidden whole would hide what it couldn't.
+    for (const w of inPieces) for (const p of w.pieces) p.visible = true;
+    const batch = mergePieces(inPieces.map((w) => ({ root: w.object, pieces: w.pieces })));
+    for (const m of batch.meshes) scene.add(m);
+    inPieces.forEach((w, i) => {
+      w.batch = batch;
+      w.slot = i;
+      batch.setGone(i, w.hidden(w.shown));
+    });
+    return batch;
   }
 
   get name(): string {
@@ -125,7 +148,9 @@ export class Wreck {
     for (let k = this.hidden(before); k < this.hidden(after); k++) {
       const piece = this.pieces[k];
       if (!piece) continue;
+      // The piece itself is hidden (the merged mesh draws it): show its copy.
       const copy = piece.clone();
+      copy.traverse((o) => (o.visible = true));
       piece.matrixWorld.decompose(copy.position, copy.quaternion, copy.scale);
       flying.push(copy);
     }
@@ -147,7 +172,8 @@ export class Wreck {
     this.live = left > 0;
     if (this.pieces.length) {
       const gone = this.hidden(left);
-      this.pieces.forEach((p, k) => (p.visible = k >= gone));
+      if (this.batch) this.batch.setGone(this.slot, gone);
+      else this.pieces.forEach((p, k) => (p.visible = k >= gone));
     } else if (left > 0) {
       this.object.visible = true;
       this.fade = 1;

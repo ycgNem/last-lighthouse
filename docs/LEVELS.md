@@ -100,43 +100,63 @@ z south, y up; the cove opens south.
 
 ## Wreck of the Meridian — `wreck`
 
-Dangerous. A steam-sail ship beached on a reef. ≈ 140 × 100 m. Holds the
-**Drowned Lens**. Built by `tools/blender/build/wreck.py`; coordinates are game
-space (x east, z south, y up).
+Dangerous. A steam-sail ship driven up onto a reef, her stern against the islet
+you land on. ≈ 140 × 100 m. Holds the **Drowned Lens**. Built by
+`tools/blender/build/wreck.py`; coordinates are game space (x east, z south, y up).
 
 ```
-                 north (−z)
-   ┌─ stern castle ─┬──────────── main deck (y 6) ─────────────────────┬─ bow ─┐
-   │ CHART ROOM ◆   │ hatch ↓ (hold ramp)   funnel   mast   foremast    │ strongbox
-   │  x −34 … −25   │                                                   │  x 34–42
-   └──┬─ broken ────┴──── mast notch ──────── HULL BREACH (x −3 … 7) ───┴───────┘
-      │ rail ↓            ↑ fallen mast (foot y 2.6)    ↑ planks into the hold
-   ┌──┴──────────┐  ▣▣▣▣▣▣ crates (BUOY_)          reef flats (y 0.2 – 1.0)
-   │ LANDING     │  lagoon (floor −0.5)               crabs · debris field (wisps)
-   │ shelf y 2.8 │
-   └─────────────┘  rocky slope down to the flats
-   ⛵ boat (west)
+                     north (−z): open sea, the home beam on the horizon
+        ┌ stern castle ┬──────────── main deck (y 6) ────────────────┬─ bow ─┐
+        │ CHART ROOM ◆ │ hatch ↓ (ramp in the hold)   funnel  masts   │ strongbox
+        └──┬ broken ───┴─ fallen mizzen ── HULL BREACH (x −3 … 7) ───┴───────┘
+   ┌───────┴──────┐ ↑ foot y 2.6     ↘ the cargo spill          reef flats
+   │ ISLET        │ ▣▣▣ cargo jam      rock ribs, sand gullies,  (y 0.2 – 0.9)
+ ⛵ gut  · camp   │ lagoon (−0.5)      tide pools · crabs            │
+   │ crown y 3.3  │                    (a swim at high water)    old hulk's ribs
+   │ crag, reef   ├─ tail ─┐                                     the Horn (y 6.2)
+   │ beacon       │        └────── rampart: the reef's rim, dry at high water ─┘
+   └──────────────┘
 ```
 
 **Two routes to the lens — the tide decides which:**
 
 | | **Low tide — "Through the Hold"** | **High tide — "Over the Rail"** |
 |---|---|---|
-| Path | Shelf → slope → reef flats → **hull breach** → hold (floor 0.3 → 0.9) → ramp along the north wall → up through the deck hatch → chart room | Shelf → **six cargo crates** floating across the lagoon (tops at 2.4) → onto the **fallen mast**'s foot (2.6) → up the mast to the deck → chart room |
-| Why only then | At high tide the flats and hold are 1.5 m deep: ~24 m of swimming, so the current rescues you first | At low tide the crates sit on the lagoon floor and the mast's foot is 2.6 m up: out of reach even with a dash-jump |
-| Danger | Crabs on the flats, Spitters in the hold | Tide Lurkers in the lagoon, Wisps over the deck, the bow Spitter |
-| Reward | **Reinforced wreckage** (brass) along the hold | Strongbox on the bow deck, Glowgill off the stern |
+| Path | Islet → down its tail → across the reef's ribs and gullies → the spill's planks into the **hull breach** → hold (floor 0.3 → 0.9) → ramp along the north wall → up through the deck hatch → chart room | Islet's ledge → the **cargo jam** (six crates, `BUOY_`, tops at 2.4) curving across the lagoon → onto the **fallen mizzen**'s foot (2.6) → up the mast to the deck → chart room |
+| Why only then | At high tide the band of reef between the islet and the breach is a swim, and the current rescues you before you're across | At low tide the crates sit on the lagoon floor and the mast's foot is 2.6 m up: out of reach even with a dash-jump |
+| Danger | Crabs on the reef, Spitters in the hold | Tide Lurkers in the lagoon, Wisps over the deck, the bow Spitter |
+| Reward | **Reinforced plating** (brass) in the hold and at the breach | Strongbox on the bow deck, Glowgill off the stern |
 
+- **The islet:** layered dark rock under thin turf, its crown about y 3.3 by the
+  stern (never within jumping reach of the deck), rising south-west to a crag with
+  the reef beacon on it. You land at the head of a gut on its west side, where the
+  boat lies at both tides. An abandoned salvagers' camp on the crown: a lean-to, a
+  cold fire, casks, a sheerlegs over the lagoon.
+- **The reef:** rock ribs running south-east with sand, weed and tide pools between,
+  bared at low water. Between the islet and the breach it stays low (a swim at high
+  water); round that it rises to a belt you can wade at high water, up to the
+  **rampart**, the reef's rim, dry at any tide, which climbs to a knoll, the Horn,
+  in the south-east. Outside the rampart the reef drops straight to swimming depth;
+  sea rocks and stacks stand off it. North of the ship is open sea.
+- **The cargo spill** fans out of the breach across the reef: split crates, bales,
+  barrels, coal, a smashed lifeboat, a yard and its rigging, the anchor and cable.
+  An older wreck's ribs and keel lie on the reef's far side (the debris glows there).
+- **Salvage** (hooked, in pieces, top first): spars along the spill and the reef,
+  machinery by the breach, on the reef and two heaps on the deck, kelp in the tide
+  pools, brass-strapped plating in the hold and outside the breach (the Iron Hook).
+  Some can be hooked from the islet's ledge or the rail, out of the crabs' way.
 - **Lens:** `NODE_lens_pedestal_00` in the chart room. Taking it triggers the
   ambush at `FX_ambush_lantern_wisp_1/2` and `FX_ambush_drowned_spitter_1`.
 - **Ways down from the deck, any tide:** drop through the broken stern rail onto
-  the shelf, or (once you hold the lens) the **rope ladder** at the stern
+  the islet, or (once you hold the lens) the **rope ladder** at the stern
   (`INT_rope_ladder` → `SPAWN_ladder`).
-- **Anchors:** shelf, slope, flats, bow sand. None on the deck — a rescue there
-  would skip both routes.
-- Two lanterns burn in the hold; the home beam shows on the northern horizon.
-- **Gulls** on the snapped foremast, the main top and the capstan; the flock
-  wheels over the main mast (`FX_gulls`).
+- **Anchors:** the islet (two), its tail, the rampart's west end, the Horn, and the
+  bow's sand. None on the deck — a rescue there would skip both routes. Each is dry,
+  or a wade, at high water.
+- Lanterns burn in the hold and on the deck, at the camp and at the landing; the
+  home beam shows on the northern horizon.
+- **Gulls** on the snapped foremast, the main top, the capstan, the reef beacon, the
+  sheerlegs and the old hulk; the flock wheels over the main mast (`FX_gulls`).
 - **Gloom:** the chart room (`GLOOM_chart_room`, r 3.2) hangs over the lens, and
   the hold (`GLOOM_hold`, r 3.0) over its wreckage: flare before you loot.
 
@@ -144,35 +164,74 @@ space (x east, z south, y up).
 
 ## Saltmere Beacon — `beacon`
 
-Compact finale. ≈ 100 × 80 m around a rock stack. Built by
+The finale. ≈ 130 × 110 m: a sea stack with the beacon on it, the old landing
+stage at its foot, a breakwater out to the headland where you land. Built by
 `tools/blender/build/beacon.py`.
 
 ```
-                        TOWER (platform y 7) — INT_beacon at the door, beam at FX_beacon_lamp
-                          ↑ stair ramp (walled; rubble until the Guardian falls)
-          ┌──── RING ARENA (y 3, r 15, FX_arena) ────┐
-   sea    │ standing stones · 4 cover pillars        │ ← GATE (wisps ×2) ← CAUSEWAY (y 2.8) ← LANDING (y 3) ⛵
-          └──────────────────────────────────────────┘        spitters on rocks either side
-                      ⟳ WRECK GUARDIAN rises from the sea (south, z 18.5)
+                north (−z): the stack, sheer to deep water, its summit y 17
+              ┌─────────────────── STACK ───────────────────┐
+              │  TOWER on a shoulder cut into it (y 7),      │ INT_beacon at the door,
+              │  walled into the rock, parapet over the sea  │ beam at FX_beacon_lamp
+              └────────────┤ stair in a cleft ├──────────────┘
+                           │ rubble until the Guardian falls
+  west rocks ▲▲   ┌────────┴──────────────────┐
+  (a ridge you    │ OLD LANDING STAGE (y 3)   │ ← GATE ← BREAKWATER (y 2.8) ←── LANDING
+   can climb)     │ compass rose, FX_arena    │  wisps   parapet on its north     quay, gut ⛵
+                  │ sheds · crane · blocks    │          spitters on skerries    boathouse
+                  └──── broken sea wall ──────┘
+                      ⟳ WRECK GUARDIAN rises (z 18.5)
+                           ⌒ sea arch (z 33)
 ```
 
-- **Tide** only changes how high the water sits around the stack. The arena,
-  causeway and landing never flood.
+- **The landing:** a rock headland with a gut cut into it from the east; the boat
+  lies in the gut at any tide, beside a quay with landing steps down to the water,
+  bollards, a post crane and lamp posts. A roofless boathouse with a crow-stepped
+  gable stands at the gut's head, its slip running down into the water.
+- **The breakwater:** a mole of dressed blocks on a rubble mound and a chain of
+  skerries, its walk at y 2.8 (it never floods), from the landing to the gate. A
+  parapet along its north side, broken in places, is cover from the north Spitter;
+  the Spitters stand on skerries either side, out of reach. Along both faces the
+  water is swimming depth, so a fall off it ends in the sea.
+- **Gate:** the arch stands on a coursed stone footing built out from the stage's
+  edge, whose sill carries the floor through to the breakwater (the rock drops away
+  steeply under it).
+- **The arena** is the old landing stage: worn rock and flagstones round the
+  compass rose at y 3, walkable out to 15 m from `FX_arena`. North, the stack's
+  foot; west, rocks rising to a ridge you can climb; south, a broken sea wall over
+  deep water; east, the gate. Cover stands about 8 m out on the diagonals: two
+  roofless store sheds (north-east and north-west, their doors away from the sea),
+  the stage's fallen crane (south-west: its pedestal, girder jib and winch) and a
+  stack of dressed blocks with a capstan (south-east). Bollards and broken lamp
+  posts stand round the rim.
 - **Boss trigger:** `TRIG_boss` covers the arena; entering wakes the Guardian.
-  You can always retreat down the causeway; 19 m from the arena centre it sinks
+  You can always retreat down the breakwater; 19 m from the arena centre it sinks
   and heals 25%, and walking back in wakes it again.
-- **After the fight:** `STATE_guardian_defeated_off` (rubble across the stair)
-  disappears, `STATE_guardian_defeated_on` (braziers) appears.
+- **The sea arch** stands in deep water about 33 m south, framing the Guardian as
+  you look out from the arena.
+- **The stack:** layered rock, sheer to deep water on the west, north and east,
+  its summit rising behind and west of the tower, clear of the beam's line to
+  home. The tower's platform (y 7) is a shoulder cut into its south face, walled
+  on three sides, with a parapet along its edge over the sea. None of them can be
+  climbed, so the stack's top is out of reach.
+- **The stair** climbs a stone-faced cleft from the arena's north edge to the
+  platform. Rubble (`STATE_guardian_defeated_off`) blocks its foot until the
+  Guardian falls, and it's the only way up (the tide sweep checks both).
+- **After the fight:** the rubble disappears, and `STATE_guardian_defeated_on`
+  (braziers at the stair's foot) appears.
 - **Relight:** `INT_beacon` with the Ember → Stage 3 → chapter card;
-  `STATE_chapter1_complete_on` lights lanterns along the causeway.
-- **Gate:** the arch stands on a coursed stone footing built out from the arena's
-  edge, whose sill carries the floor through to the first causeway stone (the
-  rock drops away steeply under it).
-- **Gloom:** two pockets on the causeway (`GLOOM_causeway_0/1`, r 2.6) between the
-  Spitters' rocks: flare through them, dazzling whoever's spitting.
-- **Anchors:** landing, causeway, arena east, arena north.
-- **Gulls** on the two quay bollards and the quay edge, so they go up as you land;
-  the flock wheels round the tower (`FX_gulls`).
+  `STATE_chapter1_complete_on` lights lanterns along the breakwater.
+- **Tide:** only the water round the rock changes. Low water bares shelves under
+  the stack, the skerries and weed; the arena, the breakwater and the quay never
+  flood. Shelves lie only under cliffs you can't climb down, and slope off into
+  swimming depth: dropped onto from walkable rock, a shelf and a ragged cliff foot
+  make a pocket the tide sweep can't walk out of.
+- **Gloom:** two pockets on the breakwater (`GLOOM_breakwater_0/1`, r 2.6) between
+  the Spitters' skerries: flare through them, dazzling whoever's spitting.
+- **Anchors:** the landing, the breakwater, and the arena's east, north and west.
+- **Gulls** on the quay's bollards and the crane's jib, so they go up as you land;
+  on the sheds, the standing lamp posts and the arch; the flock wheels round the
+  tower (`FX_gulls`).
 
 ---
 

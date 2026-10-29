@@ -5,7 +5,7 @@ Sources live in `art/blender/`, exports in `public/assets/models/`.
 
 ```
 tools/blender/build/   props.py  enemies.py  viewmodels.py  home.py  home_map.py  scenery.py  wreck.py  beacon.py
-tools/blender/lib/     kit.py (shared helpers: B(), Paint, mesh builder, terrain, export)
+tools/blender/lib/     kit.py (shared helpers: B(), Paint, mesh builder, terrain, Masonry, Boulders, pave, export)
 tools/blender/         review.py (render sheets to check by eye)  preview.py  export_gltf.py
 art/blender/
   props/props.blend              every PROP_<id> (nodes, crates, lanterns, boat…)
@@ -40,16 +40,29 @@ the game swaps the `EMBER` material in the hearth and the forge for a glowing
 one (the forge's once it's lit). A `HOME_wall_run` is 4 m long, stretched a
 little so runs meet.
 
-Off the cove, the map's coast runs steep all the way down to a flat sea floor at
-swimming depth (`SEA_FLOOR` in `home_map.py`). Boulders keep off cliff faces, and
-where the ground drops away a boulder becomes a sea rock: stood on the floor,
-stretched up clear of high water and kept 1.8 m off the shore. The tide sweep
-holds all of it to the "never trapped" rule.
+The Meridian (`wreck.py`) and Saltmere (`beacon.py`) are built the same way, from
+the same kit: coastlines and features drawn as outlines (`kit.poly_sd`,
+`kit.along`) shaping one heightfield (`kit.terrain`), `kit.Masonry` for retaining
+walls, copings and parapets, `kit.pave` for setts and flags, and `kit.Boulders`,
+which sets home.blend's `HOME_rock_<n>` boulders into the ground. Where a wall
+stands on the heightfield, put its face on a line of the terrain's vertices with
+the vertex on the line low and the one behind it high, so the rock's rise is
+hidden inside the masonry (Saltmere's grid starts on the half metre for this).
+
+Off the shore, each map's coast runs steep all the way down to a flat sea floor
+at swimming depth (`SEA_FLOOR`). Boulders keep off cliff faces, and where the
+ground drops away a boulder becomes a sea rock: stood on the floor, stretched up
+clear of high water and kept 1.8 m off the shore. The tide sweep holds all of it
+to the "never trapped" rule. Low-water shelves go only under cliffs you can't
+climb down, and slope off into swimming depth: a flat shelf ringed by steep rock
+is somewhere you can drop into from above but never walk out of.
 
 The salvage props: `PROP_flot_<kind>` for the drift (planks, drum, kelp, bottles,
 barrel, log, crate); the cove's wrecks (`PROP_wreck_boat`, `PROP_wreck_pilings`,
-`PROP_wreck_boiler`) and the Meridian's wreckage, built from `*_piece_<n>` parts
-that come off one per pull, top first; `PROP_decor_<kind>` and
+`PROP_wreck_boiler`) and the Meridian's wreckage (`PROP_driftwood`: spars and
+rigging; `PROP_scrap_pile`: a winch, pipes and boiler plate; `PROP_kelp_bed`;
+`PROP_reinforced_wreckage`: hull plating strapped with brass), built from
+`*_piece_<n>` parts that come off one per pull, top first; `PROP_decor_<kind>` and
 `PROP_lantern_post` for build mode; `PROP_plot_board` for the plots' name boards.
 The hook's reel clamps under the bolt-caster at its `reel` empty and the grapnel
 sits loaded at its `muzzle` empty.
@@ -202,14 +215,19 @@ as `object.userData`.
 ## Performance
 
 Budget: **under 300 draw calls** in every location with every enemy alive (the
-wreck, the worst, is at about 296; home with 50 decor pieces out, at most about
-275). At load the game merges every static mesh
-that shares a material into one (`src/world/Batch.ts`), so scatter costs nothing
-extra per copy. What stays separate is anything the game moves, hides or lets
-you use: names starting `NODE_ BUOY_ STATE_ INT_ TRIG_ COL_ ENEMY_ SPAWN_ ANCHOR_
-FX_ GLOOM_ PLOT_ PLACE_ NPC_ CLEAR_ SCATTER_`, and anything with an `interact` property. Those, and enemies and
-viewmodels, have their per-material split folded into one vertex-coloured mesh
-when they're rigid; named parts that animate stay apart.
+Meridian, the worst, peaks at about 275 at low water during the ambush; Saltmere
+at about 175; home with everything built and 50 decor pieces out, about 175–200).
+At load the game merges every static mesh alike in finish into one
+(`src/world/Batch.ts`): rough plain materials (wood, stone, cloth, sand, rust)
+together, the rest by roughness and metal, each colour baked into vertex
+colours, so scatter costs nothing extra per copy. A material the game patches
+(`TIDE_`) keeps its own. What stays separate is anything the game moves, hides
+or lets you use: names starting `NODE_ BUOY_ STATE_ INT_ TRIG_ COL_ ENEMY_ SPAWN_
+ANCHOR_ FX_ GLOOM_ PLOT_ PLACE_ NPC_ CLEAR_ SCATTER_`, and anything with an
+`interact` property. Those, and enemies and viewmodels, have their per-material
+split folded into one vertex-coloured mesh when they're rigid; named parts that
+animate stay apart. A place's wrecks built in pieces draw merged, all of them
+together, so tearing a piece off only blanks its triangles.
 
 ## Animation
 
