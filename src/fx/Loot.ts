@@ -39,6 +39,11 @@ export class Loot {
   private readonly keyMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffffff).multiplyScalar(2.4) });
   private readonly haloMat = new THREE.MeshBasicMaterial({ color: 0xffd27a, transparent: true, opacity: 0.25, depthWrite: false, blending: THREE.AdditiveBlending });
 
+  /** One of each look, so their shaders can be compiled before the first pickup. */
+  samples(): THREE.Object3D[] {
+    return [this.sparkMat, this.pickMat, this.keyMat, this.haloMat].map((m) => new THREE.Mesh(sparkleGeo, m));
+  }
+
   /** Visual only: `count` sparkles arc from `from` into the player. */
   burst(from: THREE.Vector3, count: number): void {
     for (let i = 0; i < Math.min(count, 12); i++) {

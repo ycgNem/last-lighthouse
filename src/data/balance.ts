@@ -12,7 +12,19 @@ export const BALANCE = {
     jumpSpeed: 7.2,
     wadeSpeedMul: 0.6,
     swimSpeedMul: 0.45,
-    dash: { distance: 6, duration: 0.18, iframes: 0.28, cooldown: 1.2 },
+    dash: {
+      /** Metres covered: fast off the mark, easing to walking pace by the end, so there's no slide after. */
+      distance: 6,
+      duration: 0.22,
+      iframes: 0.3,
+      cooldown: 1.2,
+      /** A press this long before a dash is possible (mid-dash, or a charge about to return) still dashes. */
+      buffer: 0.15,
+      /** Gravity while dashing and not rising: a dash in the air holds nearly level instead of dropping. */
+      fallHold: 0.25,
+      /** A dash along the ground follows slopes down instead of launching off them, up to this drop per step. */
+      stick: 0.5,
+    },
     eatSeconds: 0.6,
   },
   /** The Keeper's Lantern Flare (Q): a cone of light that knocks enemies off their stride. */

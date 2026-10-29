@@ -1,16 +1,19 @@
 /**
- * Fixed-step simulation (deterministic movement, collisions, tide) with
- * variable-rate rendering. `alpha` is how far we are into the next step.
+ * Each frame the simulation advances by exactly the time that passed, in equal
+ * steps of at most 1/60 s (so a dash can't tunnel through a wall and a slow
+ * frame can't blow up the physics), and then the frame is drawn. Advancing by
+ * the real frame time keeps motion smooth at any refresh rate: a fixed 60 Hz
+ * step drawn on a 144 Hz screen shows the same position two or three frames
+ * running, and the view judders however fast the game renders.
  */
 export class Loop {
-  readonly step = 1 / 60;
-  private acc = 0;
+  readonly maxStep = 1 / 60;
   private last = 0;
   private raf = 0;
 
   constructor(
     private readonly update: (dt: number) => void,
-    private readonly render: (alpha: number, frameDt: number) => void,
+    private readonly render: (frameDt: number) => void,
   ) {}
 
   start(): void {
@@ -19,12 +22,9 @@ export class Loop {
       // Clamp so a background tab doesn't simulate minutes at once.
       const frameDt = Math.min((now - this.last) / 1000, 0.25);
       this.last = now;
-      this.acc += frameDt;
-      while (this.acc >= this.step) {
-        this.update(this.step);
-        this.acc -= this.step;
-      }
-      this.render(this.acc / this.step, frameDt);
+      const steps = Math.max(1, Math.ceil(frameDt / this.maxStep - 1e-6));
+      for (let i = 0; i < steps; i++) this.update(frameDt / steps);
+      this.render(frameDt);
       this.raf = requestAnimationFrame(frame);
     };
     this.raf = requestAnimationFrame(frame);

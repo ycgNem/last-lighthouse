@@ -2,9 +2,9 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
 // Loads the Blender exports in public/assets/models. Shared files (props,
-// enemies, viewmodels, home) are preloaded once and cloned by object name.
+// enemies, viewmodels, home, scenery) are preloaded once and cloned by object name.
 
-export const SHARED_MODELS = ["props.glb", "enemies.glb", "viewmodels.glb", "home.glb"] as const;
+export const SHARED_MODELS = ["props.glb", "enemies.glb", "viewmodels.glb", "home.glb", "scenery.glb"] as const;
 
 export class Assets {
   private readonly loader = new GLTFLoader();

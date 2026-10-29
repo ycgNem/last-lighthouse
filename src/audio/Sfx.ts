@@ -164,7 +164,8 @@ export class Sfx {
     this.noise({ dur: 0.08, gain: 0.12, freq: 3000, type: "highpass" });
   }
   dash(): void {
-    this.noise({ dur: 0.25, gain: 0.15, freq: 600, sweepTo: 2400, q: 0.8 });
+    this.noise({ dur: 0.22, gain: 0.15, freq: 700, sweepTo: 2600, q: 0.8 });
+    this.tone({ type: "sine", f0: 150, f1: 55, dur: 0.14, gain: 0.07 });
   }
   jump(): void {
     this.noise({ dur: 0.08, gain: 0.05, freq: 800, type: "lowpass" });
@@ -257,6 +258,21 @@ export class Sfx {
   }
 
   // ------------------------------------------------------------- world, ui
+
+  /** A gull from where it is: a long "kee-ow" or two, or the laughing alarm as it takes off. */
+  gull(at: THREE.Vector3, alarm = false): void {
+    const pitch = 0.85 + Math.random() * 0.3;
+    const calls = alarm ? 3 + Math.floor(Math.random() * 2) : 1 + Math.floor(Math.random() * 2);
+    for (let i = 0; i < calls; i++) {
+      if (alarm) {
+        this.tone({ type: "sawtooth", f0: 1050 * pitch, f1: 760 * pitch, dur: 0.13, gain: 0.12, attack: 0.012, at, delay: i * 0.17, lowpass: 2600 });
+        continue;
+      }
+      const delay = i * 0.45;
+      this.tone({ type: "sawtooth", f0: 1250 * pitch, f1: 1850 * pitch, dur: 0.09, gain: 0.16, attack: 0.02, at, delay, lowpass: 2800 });
+      this.tone({ type: "sawtooth", f0: 1850 * pitch, f1: 1000 * pitch, dur: 0.34, gain: 0.16, attack: 0.01, at, delay: delay + 0.08, lowpass: 2800 });
+    }
+  }
 
   splash(at?: THREE.Vector3): void {
     this.noise({ dur: 0.35, gain: 0.15, freq: 1400, sweepTo: 500, at });

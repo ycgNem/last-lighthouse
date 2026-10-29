@@ -62,6 +62,11 @@ export class Projectiles {
   private readonly orbFlatMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(FX_COLORS.seaGreen).lerp(new THREE.Color(0xffffff), 0.35) });
   private contrast = false;
 
+  /** One of each look, so their shaders can be compiled before the first shot. */
+  samples(): THREE.Object3D[] {
+    return [this.boltMat, this.orbMat, this.haloMat, this.rimMat, this.orbFlatMat].map((m) => new THREE.Mesh(orbGeo, m));
+  }
+
   private take(kind: Kind): Shot {
     let s = this.shots.find((x) => !x.active && x.kind === kind);
     if (!s) {

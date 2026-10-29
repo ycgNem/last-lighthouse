@@ -116,11 +116,13 @@ export class Effects {
     this.emit(at, { count, color, speed: 7, life: 0.8, gravity: 4, up: 1 });
   }
 
+  /** A ring, so its shader can be compiled before the first one. */
+  samples(): THREE.Object3D[] {
+    return [new THREE.Mesh(this.ringGeo, ringMaterial(0xffffff, 1))];
+  }
+
   ring(at: THREE.Vector3, color: number, from: number, to: number, dur: number, opacity = 0.8): void {
-    const mesh = new THREE.Mesh(
-      this.ringGeo,
-      new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }),
-    );
+    const mesh = new THREE.Mesh(this.ringGeo, ringMaterial(color, opacity));
     mesh.position.copy(at);
     mesh.scale.setScalar(from);
     this.group.add(mesh);
@@ -168,4 +170,8 @@ export class Effects {
     }
     this.rings.length = 0;
   }
+}
+
+function ringMaterial(color: number, opacity: number): THREE.MeshBasicMaterial {
+  return new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
 }

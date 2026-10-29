@@ -106,6 +106,15 @@ export class GatherNode {
     return null;
   }
 
+  /** Worth heading for: uses left, and the tide, your skills and gear allow it (Gloom you can flare away). */
+  obtainable(ctx: GameContext): boolean {
+    const d = this.def;
+    if (this.usesLeft <= 0 || d.keyItem) return false;
+    if ((d.tide === "low" && ctx.tide.state === "high") || (d.tide === "high" && ctx.tide.state === "low")) return false;
+    if (d.skill && skillLevel(ctx.state, d.skill) < d.level) return false;
+    return !d.requiresGear || ctx.state.gear.some((g) => g === d.requiresGear || (GEAR[g].slot === GEAR[d.requiresGear!].slot && GEAR[g].tier > GEAR[d.requiresGear!].tier));
+  }
+
   private hasRoom(ctx: GameContext): boolean {
     const s = ctx.state;
     if (s.satchel.filter(Boolean).length < satchelCapacity(s)) return true;

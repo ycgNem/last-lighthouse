@@ -45,6 +45,11 @@ the mouse normally.
 
 ## The chapter
 
+A new game opens with a short prologue: the sea rose, the great lights hold back
+the Gloom, and this one is failing. You're its new keeper. The objective panel
+names where each material comes from, and the compass points the way to it, then
+home.
+
 1. **Lantern's Rest.** Talk to Maren by the lighthouse door. The hearth, storage
    chest, forge and dock are your stations; the lighthouse lamp shows what the next
    upgrade needs.
@@ -67,7 +72,8 @@ were carrying (never what's in the chest, never key items).
 ## Settings and accessibility
 
 In the journal (Tab) → Settings: mouse sensitivity, field of view, volume,
-screen shake, head bob, bloom and rain; **rebind any key** (click it, press the
+screen shake, head bob, bloom and rain; **resolution** (Auto lowers it while the
+GPU can't keep up and raises it again when it can, or pick a fixed scale); **rebind any key** (click it, press the
 new one; Esc cancels, and a key already in use swaps over); **reduced motion** (no
 shake, bob, sway, dash kick or flashes; a new save follows your system setting);
 **high-contrast enemy shots** (pale cores with dark rims, so they don't rely on

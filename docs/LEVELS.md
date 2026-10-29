@@ -59,6 +59,14 @@ water rises and falls against the sea wall but never reaches a walkable surface.
 - **Windows:** window meshes named `WIN_s0`, `WIN_s1`, `WIN_s2` — emissive turned
   on when stage ≥ suffix.
 - Lighting: warm. Amber point lights at the hearth, lanterns along the path.
+- **Dressing** (`HomeLevel.ts`: `FIELD_WALLS`, `DRESSING`, `ODDMENTS`): dry-stone
+  field walls east, south-west and north (open-ended, inside the rescue anchors),
+  Odile's kitchen garden and scarecrow, the well, a washing line broadside to the
+  square, Tib's net frame and lobster pots by the dock head, his other boat upturned
+  on trestles, the memorial stone facing the village, gorse toward the rim, barrels
+  by the forge.
+- **Gulls** sit on three lantern posts, the memorial, the walls, the boat's keel,
+  the dock and two cottage ridges (`PERCHES`), and wheel round the lighthouse.
 
 ---
 
@@ -94,6 +102,15 @@ enemy type, a tide change.
   (high, Fishing 4).
 - **Gloom:** one pocket over the islet (`GLOOM_islet`, r 3.5), shrouding the
   sealed cache (the plain crate nearby stays clear).
+- **What the sea took:** the old coast road runs down the beach into the water,
+  its setts showing through the sand, five iron lamps leaning further the deeper
+  they stand, a milestone and a fallen fingerpost; an older wreck's ribs on the
+  east flats; rocks in the shallows where a field wall ended; a roofless croft on
+  the east dunes with one gable and its chimney; shells, weed and pebbles all
+  along the tideline. All of it is kept off the paths (`KEEP_CLEAR` in
+  `shore.py`), and the tide sweep checks it.
+- **Gulls:** `FX_perch_lamp` (the last lamp, out in the shallows, so it's empty at
+  high water), `FX_perch_lamp_bar`, and the croft's chimney and east wall.
 - **First tide change:** a new save's tide clock starts 1:00 into low tide, so the
   first warning fires after two minutes of play (about one minute into the first
   Gullwash trip) and the water starts rising a minute later. The tide clock only
@@ -138,6 +155,8 @@ space (x east, z south, y up).
 - **Anchors:** shelf, slope, flats, bow sand. None on the deck — a rescue there
   would skip both routes.
 - Two lanterns burn in the hold; the home beam shows on the northern horizon.
+- **Gulls** on the snapped foremast, the main top and the capstan; the flock
+  wheels over the main mast (`FX_gulls`).
 - **Gloom:** the chart room (`GLOOM_chart_room`, r 3.2) hangs over the lens, and
   the hold (`GLOOM_hold`, r 3.0) over its wreckage: flare before you loot.
 
@@ -172,8 +191,18 @@ Compact finale. ≈ 100 × 80 m around a rock stack. Built by
 - **Gloom:** two pockets on the causeway (`GLOOM_causeway_0/1`, r 2.6) between the
   Spitters' rocks: flare through them, dazzling whoever's spitting.
 - **Anchors:** landing, causeway, arena east, arena north.
+- **Gulls** on the two quay bollards and the quay edge, so they go up as you land;
+  the flock wheels round the tower (`FX_gulls`).
 
 ---
+
+## Every horizon
+
+Past the playable edge each place has the drowned world on its horizon
+(`src/data/scenery.ts`, models in `scenery.glb`): roofs and a church spire
+standing in the sea, telegraph poles walking out from the shore, sea stacks, a
+lighthouse that went dark, a wreck's masts, a windmill, a far headland. Pieces sit
+90–170 m out, inside the fog, and never in line with the home beam.
 
 ## Encounter tuning targets
 

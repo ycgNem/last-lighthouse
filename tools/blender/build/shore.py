@@ -504,6 +504,223 @@ for i in range(9):
     z = 19.2 + (vr.random() - 0.5) * 1.6
     dress("seaweed", f"wrack_{i}", x, z)
 
+# ------------------------------------------------------- what the sea took
+# Gullwash used to be a village shore, not an island. Its own dice (`dr`), so
+# none of this moves a node, a rock or the marram. Nothing here is in the way
+# of a node, an enemy's ground or a path; what you could walk into is solid.
+
+dr = random.Random(321)
+KEEP_CLEAR = [(x, z, 3.0) for x, z in ((-30, 20.5), (-8, 19.5), (14, 21), (31, 26), (-44, 34), (40, 13), (-18, 17), (26, 18), (2, 2),
+                                       (-12, -12), (8, -15), (30, -12), (-34, -10), (-16, -2), (12, -4), (36, 0), (0, -6))]
+KEEP_CLEAR += [(x, z, 4.0) for x, z in ((-10, -2), (5, -8), (18, 4), (-22, 6), (-15, 23), (20, 25))]
+KEEP_CLEAR += [(JX, 48.0, 6.0), (hx, hz, 6.0), (-1.0, 18.0, 4.0), (-52.5, 31.0, 4.0), (-17.6, 40.8, 2.0)]
+
+
+def clear(x, z, pad=0.0):
+    return all(math.hypot(x - cx, z - cz) > r + pad for cx, cz, r in KEEP_CLEAR)
+
+
+# The coast road: it came down off the dunes past the hut and ran north across
+# what were fields, toward the village that's out there now under the water.
+# Its setts show through the sand in patches, its iron lamps lean further the
+# deeper they stand, and the last one is in the sea.
+ROAD = [(-33.0, 21.0), (-31.5, 8.0), (-29.5, -6.0), (-28.0, -20.0), (-27.0, -34.0)]
+
+
+def road_at(t):
+    """Point and heading along the road, t in 0..1."""
+    n = len(ROAD) - 1
+    i = min(int(t * n), n - 1)
+    u = t * n - i
+    (ax, az), (bx, bz) = ROAD[i], ROAD[i + 1]
+    return ax + (bx - ax) * u, az + (bz - az) * u, math.atan2(bx - ax, bz - az)
+
+
+setts = MB(60)
+for k in range(260):
+    t = dr.random()
+    cx, cz, head = road_at(t)
+    # Patches, not a whole road: the sand's taken most of it.
+    if noise2(t * 9.0, 0.5, 31) < 0.05:
+        continue
+    across = (dr.random() - 0.5) * 3.4
+    x, z = cx + math.cos(head) * across, cz - math.sin(head) * across
+    if not clear(x, z, 0.4):
+        continue
+    y = H(x, z)
+    setts.box((0.24 + dr.random() * 0.08, 0.1, 0.14 + dr.random() * 0.05), at=(x, y - 0.075, z), mat=P["stone_dark"] if k % 3 else P["stone"],
+              yaw=head + (dr.random() - 0.5) * 0.15, tint=0.8 + dr.random() * 0.3, bev=0.012)
+# Kerb stones along both sides where the road is clearest.
+for side in (-1, 1):
+    for k in range(34):
+        t = 0.08 + k / 34 * 0.6
+        cx, cz, head = road_at(t)
+        if noise2(t * 7.0, side, 33) < 0.15:
+            continue
+        x, z = cx + math.cos(head) * side * 1.85, cz - math.sin(head) * side * 1.85
+        if clear(x, z, 0.3):
+            setts.box((0.18, 0.16, 0.55), at=(x, H(x, z) - 0.09, z), mat=P["stone"], yaw=head, tint=0.85 + dr.random() * 0.2, bev=0.02)
+setts.build("road_setts", ao=0.5, grime=0.3, tideline=True)
+
+lamps = MB(61)
+lamp_col = MB()
+for k, t in enumerate((0.06, 0.27, 0.48, 0.69, 0.9)):
+    cx, cz, head = road_at(t)
+    x, z = cx + math.cos(head) * 2.4, cz - math.sin(head) * 2.4
+    base = H(x, z)
+    lean = 0.05 + k * 0.07
+    # Lean seaward (north) and a little across.
+    pitch, roll = -lean, (dr.random() - 0.5) * 0.12
+    h = 3.4
+    lamps.lathe([(0.17, -0.5), (0.17, 0.05), (0.12, 0.12), (0.08, 0.25), (0.06, 0.4), (0.05, h - 0.1), (0.065, h), (0.0, h + 0.05)], at=(x, base, z), mat=P["iron"], segs=8, pitch=pitch, roll=roll)
+    # Where the top went after the lean (pitch tips +y toward -z; roll toward +x).
+    tx, ty, tz = x + math.sin(-roll) * h, base + h * math.cos(lean), z - math.sin(lean) * h
+    if k < 4:
+        # The crossbar the lamplighter leaned his ladder on, and an empty lantern cage.
+        lamps.box((0.7, 0.05, 0.05), at=(tx, ty - 0.55, tz), mat=P["iron"], yaw=head, roll=roll, centered=True, bev=0)
+        for sx in (-1, 1):
+            lamps.cyl(0.03, 0.03, 0.45, at=(tx + math.cos(head) * sx * 0.12, ty, tz - math.sin(head) * sx * 0.12), mat=P["iron"], segs=4, pitch=pitch, roll=roll)
+        lamps.cyl(0.2, 0.05, 0.22, at=(tx, ty + 0.42, tz), mat=P["iron"], segs=6, pitch=pitch, roll=roll)
+    lamp_col.cyl(0.17, 0.12, h, at=(x, base - 0.5, z), segs=6, pitch=pitch, roll=roll, bev=0)
+    # Gulls stand on the bare post at the end and on a crossbar (src/world/Gulls.ts).
+    if k == 4:
+        kit.empty("FX_perch_lamp", (tx, ty + 0.1, tz))
+    elif k == 1:
+        kit.empty("FX_perch_lamp_bar", (tx + math.cos(head) * 0.3, ty - 0.45, tz - math.sin(head) * 0.3))
+    barnacles(lamps, (x, max(base, 0.0) + 0.3, z), (0.17, 0.25), 6 + k * 3, size=0.04)
+lamps.build("road_lamps", tideline=True, grime=0.15)
+lamp_col.build("COL_road_lamps", ao=0, grime=0)
+
+# A milestone on the verge, and the fingerpost that stood at the junction, down
+# in the sand. The arms pointed the way the road still goes: into the sea.
+rx, rz, mh = road_at(0.18)
+mx, mz = rx - 2.6, rz
+mile = MB(62)
+mile.box((0.42, 0.95, 0.24), at=(0, -0.25, 0), mat=P["stone"], bev=0.05)
+mile.cyl(0.21, 0.21, 0.24, at=(0, 0.7, 0), mat=P["stone"], pitch=math.pi / 2, centered=True, segs=12)
+mile.box((0.3, 0.2, 0.03), at=(0, 0.25, 0.12), mat=P["stone_dark"], bev=0)
+mile.build("milestone", loc=(mx, H(mx, mz), mz), yaw=mh + 0.15, roll=0.08, grime=0.3)
+MB().box((0.45, 1.1, 0.3), at=(0, -0.3, 0), bev=0).build("COL_milestone", loc=(mx, H(mx, mz), mz), yaw=mh + 0.15, ao=0, grime=0)
+fx, fz, fh = road_at(0.33)
+fx += 2.8
+finger = MB(63)
+finger.box((0.14, 0.14, 2.6), at=(0, 0.07, 0), mat=P["driftwood_dark"], bev=0.02)
+for k, (dz, ang) in enumerate(((0.9, 0.5), (0.6, -0.7))):
+    finger.prism([(-0.55, -0.1), (0.4, -0.1), (0.55, 0.0), (0.4, 0.1), (-0.55, 0.1)], 0.04, at=(0.0, 0.2 + k * 0.03, dz), mat=Paint(P["paint_white"].mat, 0xB9B2A0), yaw=ang, pitch=-math.pi / 2, bev=0)
+finger.build("fingerpost_fallen", loc=(fx, H(fx, fz), fz), yaw=fh + 1.1, grime=0.35)
+
+# An older wreck than the Meridian: a coaster's skeleton on the east flats,
+# keel to the sea. The tide fills her at high water.
+bx, bz = 43.5, 4.5
+rib = kit.place(TEMPLATES, "hull_ribs", "old_wreck", (bx, H(bx, bz) - 0.25, bz), yaw=0.25, scale=1.75)
+MB().box((0.6, 0.6, 10.6), at=(0, -0.2, 0), bev=0).build("COL_old_wreck_keel", loc=(bx, H(bx, bz) - 0.25, bz), yaw=0.25, ao=0, grime=0)
+for k in range(3):
+    a = 0.25 + k * 0.4
+    x, z = bx + math.sin(a) * (2.5 + k * 1.2) + 2.2, bz + math.cos(a) * 3.0 - 5.5
+    if clear(x, z):
+        kit.place(TEMPLATES, "seaweed", f"old_wreck_weed_{k}", (x, H(x, z), z), yaw=dr.random() * math.tau)
+
+# Rocks in the shallows off the flats' north edge, weed below and barnacles at
+# the waterline: where the land used to end in a field wall.
+for i, (x, z, r) in enumerate(((-10.0, -21.0, 2.0), (-7.0, -22.5, 1.4), (15.0, -20.5, 1.8), (17.5, -22.0, 1.2), (-39.0, -26.5, 2.2), (43.0, -16.5, 1.6), (45.5, -19.0, 1.1))):
+    rk = MB(70 + i)
+    rk.rock(r, mat=P["rock"] if i % 2 else P["rock_dark"], seed=400 + i, squash=0.75)
+    seaweed_y = 0.0 - H(x, z) + r * 0.1
+    for k in range(5):
+        a = dr.random() * math.tau
+        rk.tube([(math.cos(a) * r * 0.8, seaweed_y, math.sin(a) * r * 0.8), (math.cos(a) * r * 1.2, seaweed_y - 0.25, math.sin(a) * r * 1.25)], [0.05, 0.02], mat=P["kelp_dark"], segs=4)
+    barnacles(rk, (0.0, -H(x, z) + 0.9, 0.0), (r * 0.95, 0.5), 10, size=0.05)
+    rk.build(f"rock_shallows_{i}", loc=(x, H(x, z) - r * 0.25, z), tideline=True, props={"col": 1})
+
+# A crofter's cottage on the east dunes, roofless since before anyone here
+# remembers: walls of rubble stone, one gable still standing with its chimney,
+# a door gap facing the jetty, the fallen roof timbers inside.
+CX, CZ, CYAW = 41.0, 37.0, -0.35
+cg = H(CX, CZ) - 0.15
+cot = MB(80)
+cot_col = MB()
+W, Dp, T = 6.4, 4.6, 0.5
+RUBBLE = [Paint(P["stone"].mat, c) for c in (0x9A958A, 0x8C877C, 0xA39D90)]
+walls = [
+    # (centre x, centre z, length, along x?, height left, height right)
+    (0.0, -Dp / 2, W, True, 1.6, 2.2),
+    (-W / 2, 0.0, Dp, False, 2.3, 2.3),
+    (W / 2, 0.0, Dp, False, 1.0, 1.5),
+]
+for wx, wz, L, along, h0, h1 in walls:
+    # Broken walls step down in a few runs; the standing gable is one piece.
+    n = 1 if h0 == h1 else 4
+    for k in range(n):
+        u0 = k / n
+        h = h0 + (h1 - h0) * (u0 + 0.5 / n) - (0.12 * dr.random() if h0 != h1 else 0.0)
+        seg = L / n
+        px = wx + ((u0 + 0.5 / n) - 0.5) * L if along else wx
+        pz = wz if along else wz + ((u0 + 0.5 / n) - 0.5) * L
+        size = (seg + 0.02, h, T) if along else (T, h, seg + 0.02)
+        cot.box(size, at=(px, -0.1, pz), mat=RUBBLE[k % 3], tint=0.85 + 0.2 * dr.random(), bev=0.06)
+        cot_col.box(size, at=(px, -0.1, pz), bev=0)
+# Front wall (+z, toward the jetty): a door gap in the middle, a window gap left.
+for x0, x1, h in ((-W / 2, -0.7, 1.5), (0.7, W / 2, 1.2)):
+    L = x1 - x0
+    cot.box((L, h, T), at=((x0 + x1) / 2, -0.1, Dp / 2), mat=RUBBLE[1], tint=0.9, bev=0.06)
+    cot_col.box((L, h, T), at=((x0 + x1) / 2, -0.1, Dp / 2), bev=0)
+# The gable on the west wall, and its chimney.
+cot.prism([(-Dp / 2 - T / 2, 0.0), (Dp / 2 + T / 2, 0.0), (0.0, 1.8)], T, at=(-W / 2, 2.2, 0.0), mat=RUBBLE[0], yaw=math.pi / 2, bev=0.05)
+cot.box((0.75, 1.7, 0.8), at=(-W / 2 - 0.02, 3.4, 0.0), mat=RUBBLE[1], bev=0.05)
+cot.cyl(0.14, 0.12, 0.35, at=(-W / 2 - 0.02, 5.1, 0.0), mat=Paint(P["stone"].mat, 0x8A5A44), segs=8)
+# Roof timbers fallen in, and rubble along the low walls.
+for k in range(4):
+    cot.box((0.14, 0.14, 3.8), at=(-1.8 + k * 1.2, 0.1 + 0.18 * k, -0.4), mat=P["driftwood_dark"], pitch=0.22 + 0.08 * k, roll=0.2 * (dr.random() - 0.5), bev=0.02)
+for k in range(14):
+    x = (dr.random() - 0.5) * (W + 1.5)
+    z = (dr.random() - 0.5) * (Dp + 1.5)
+    if abs(x) < W / 2 - 0.5 and abs(z) < Dp / 2 - 0.5:
+        continue
+    cot.rock(0.18 + dr.random() * 0.15, at=(x, 0.0, z), mat=RUBBLE[k % 3], seed=500 + k, squash=0.7)
+cot.build("croft_ruin", loc=(CX, cg, CZ), yaw=CYAW, grime=0.3)
+cot_col.build("COL_croft_ruin", loc=(CX, cg, CZ), yaw=CYAW, ao=0, grime=0)
+
+
+def croft_at(lx, ly, lz):
+    c, s = math.cos(CYAW), math.sin(CYAW)
+    return (CX + lx * c + lz * s, cg + ly, CZ - lx * s + lz * c)
+
+
+# A gull on the chimney beside its pot, another on the low east wall.
+kit.empty("FX_perch_croft_chimney", croft_at(-W / 2 - 0.02, 5.4, 0.28))
+kit.empty("FX_perch_croft_wall", croft_at(W / 2, 1.8, 0.9))
+
+# The sand itself: shells and pebbles, broken crab shells and strands of weed
+# the last tide left, thickest along the strand line. One mesh, nothing solid.
+litter = MB(90)
+n_items = 0
+for _ in range(2600):
+    if n_items >= 520:
+        break
+    x, z = dr.uniform(-48.0, 50.0), dr.uniform(-22.0, 24.0)
+    y = H(x, z)
+    if y < -0.4 or y > 3.1 or not clear(x, z, -1.5):
+        continue
+    # Densest on the strand (y ~ 1.9) and in the pools' rims.
+    strand = math.exp(-((y - 1.95) / 0.35) ** 2)
+    if dr.random() > 0.25 + 0.75 * strand:
+        continue
+    n_items += 1
+    kind = dr.random()
+    if kind < 0.45:
+        litter.sphere(0.035 + dr.random() * 0.05, at=(x, y + 0.005, z), mat=P["stone"] if dr.random() < 0.5 else P["rock"], scale=(1.0, 0.55, 0.8), subdiv=1, yaw=dr.random() * math.tau, tint=0.75 + 0.4 * dr.random())
+    elif kind < 0.75:
+        litter.sphere(0.04 + dr.random() * 0.03, at=(x, y + 0.004, z), mat=P["bone"] if dr.random() < 0.7 else P["barnacle"], scale=(1.0, 0.3, 0.75), subdiv=0, yaw=dr.random() * math.tau, tint=0.85 + 0.2 * dr.random())
+    elif kind < 0.9:
+        a = dr.random() * math.tau
+        L = 0.4 + dr.random() * 0.7
+        pts = [(x + math.cos(a) * L * t + 0.08 * math.sin(t * 7 + a), y + 0.01, z + math.sin(a) * L * t + 0.08 * math.cos(t * 6)) for t in (0.0, 0.33, 0.66, 1.0)]
+        litter.tube(pts, [0.03, 0.025, 0.02, 0.012], mat=P["kelp"] if dr.random() < 0.6 else P["kelp_dark"], segs=3, cap=False)
+    else:
+        # A crab's cast shell, pale and upside down.
+        litter.sphere(0.09, at=(x, y + 0.01, z), mat=Paint(P["bone"].mat, 0xC9A08A), scale=(1.0, 0.35, 0.8), subdiv=1, yaw=dr.random() * math.tau)
+litter.build("beach_litter", ao=0.3, grime=0.0)
+
 # --------------------------------------------------------------- gathering
 
 

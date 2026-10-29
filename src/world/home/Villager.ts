@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { damp } from "../../core/math";
 import { POLYFORK_CDN, type VillagerLook } from "../../data/villagers";
 
@@ -28,6 +29,51 @@ function fetchModel(asset: string): Promise<THREE.Group | null> {
     files.set(asset, p);
   }
   return p;
+}
+
+/**
+ * A Polyfork character comes as several skinned parts (body, hair, coat…) and
+ * the loader gives each part its own copy of the skeleton. three uploads every
+ * copy's bones to the GPU each frame, and each upload stalls it: five villagers
+ * cost three times as much as a whole level. Parts with the same skin share one
+ * skeleton, and parts that also share a material and a place become one mesh.
+ */
+function consolidate(root: THREE.Object3D): void {
+  root.updateMatrixWorld(true);
+  const parts: THREE.SkinnedMesh[] = [];
+  root.traverse((o) => {
+    if ((o as THREE.SkinnedMesh).isSkinnedMesh && o.visible) parts.push(o as THREE.SkinnedMesh);
+  });
+  const skeletons: THREE.Skeleton[] = [];
+  for (const m of parts) {
+    const same = skeletons.find((s) => sameSkin(s, m.skeleton));
+    if (same) m.skeleton = same;
+    else skeletons.push(m.skeleton);
+  }
+  const groups = new Map<string, THREE.SkinnedMesh[]>();
+  for (const m of parts) {
+    const key = `${m.skeleton.uuid}/${(m.material as THREE.Material).uuid}`;
+    const list = groups.get(key);
+    if (list) list.push(m);
+    else groups.set(key, [m]);
+  }
+  for (const [first, ...rest] of groups.values()) {
+    if (!first) continue;
+    const join = rest.filter((m) => sameMatrix(m.matrixWorld, first.matrixWorld) && sameMatrix(m.bindMatrix, first.bindMatrix));
+    if (!join.length) continue;
+    const merged = mergeGeometries([first.geometry, ...join.map((m) => m.geometry)]);
+    if (!merged) continue;
+    first.geometry = merged;
+    for (const m of join) m.removeFromParent();
+  }
+}
+
+function sameSkin(a: THREE.Skeleton, b: THREE.Skeleton): boolean {
+  return a.bones.length === b.bones.length && a.bones.every((bone, i) => bone === b.bones[i] && a.boneInverses[i]!.equals(b.boneInverses[i]!));
+}
+
+function sameMatrix(a: THREE.Matrix4, b: THREE.Matrix4): boolean {
+  return a.elements.every((v, i) => Math.abs(v - b.elements[i]!) < 1e-5);
 }
 
 interface CarryPose {
@@ -73,21 +119,26 @@ export class Villager {
     private readonly look: VillagerLook,
   ) {
     this.object = scene;
-    scene.traverse((o) => {
-      if ((o as THREE.Bone).isBone) this.bones.set(o.name, o);
-      const m = o as THREE.Mesh;
-      if (m.isMesh) {
-        m.castShadow = m.receiveShadow = true;
-        // Posed limbs leave the bind-pose bounds.
-        m.frustumCulled = false;
-      }
-    });
     for (const side of look.hide ?? []) {
       const held = scene.getObjectByName(`attach-${side}-mesh`);
       if (held) held.visible = false;
     }
+    consolidate(scene);
+    scene.traverse((o) => {
+      if ((o as THREE.Bone).isBone) this.bones.set(o.name, o);
+      const m = o as THREE.Mesh;
+      if (m.isMesh) m.castShadow = m.receiveShadow = true;
+    });
     const proportions = scene.getObjectByName("character")?.userData.proportions as { carry?: string; carryPose?: CarryPose } | undefined;
     this.pose(proportions?.carry ?? null, proportions?.carryPose ?? null);
+    // Bounds for culling, taken in the pose (the file's are for the T-pose), with
+    // room for breathing and the head turning.
+    scene.traverse((o) => {
+      const m = o as THREE.SkinnedMesh;
+      if (!m.isSkinnedMesh) return;
+      m.computeBoundingSphere();
+      if (m.boundingSphere) m.boundingSphere.radius += 0.3;
+    });
     this.bodyYaw = look.yaw;
     scene.rotation.y = look.yaw;
   }

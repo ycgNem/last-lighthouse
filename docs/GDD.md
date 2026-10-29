@@ -192,8 +192,11 @@ patterns and knowing when to retreat — not health sponges.
 - **Gloom pockets** (`GLOOM_` markers) hang over loot in the dark places: the
   nodes inside are shrouded (no gathering) and standing in one chills you after
   1.2 s, 4 HP a second, but never below 15 HP. Flare them.
-- **Dash:** 6 m burst in move direction (forward if idle), 0.28 s invulnerable,
-  1.2 s cooldown. Combat 5 grants a second charge.
+- **Dash:** exactly 6 m in 0.22 s in the move direction (forward if idle), fast
+  off the mark and easing into a walk at the end, so it never slides. 0.3 s
+  invulnerable, 1.2 s cooldown; a press up to 0.15 s early still fires. In the air
+  it holds its height (a dash-jump carries), and on the ground it hugs slopes and
+  steps down instead of launching off them. Combat 5 grants a second charge.
 - **Eating:** 0.6 s animation, can move at half speed while eating. Heals over 1 s.
 - No stamina, no ammo, no durability.
 
@@ -288,7 +291,8 @@ Quest items (never lost, don't take satchel slots): `drowned_lens`,
 
 | Question | Answer on screen |
 |---|---|
-| What am I doing next? | **Pinned objective** top-left (main quest), plus one **tracked resource goal** under it ("Timber 7/12") |
+| What am I doing next? | **Pinned objective** top-left (main quest), plus one **tracked resource goal** under it ("Timber 7/12"). Each short material names where it comes from; the compass points to the nearest place that has what you still need, then home once you have it all (with a "Take it home" toast) |
+| Why am I here at all? | A four-card **prologue** on a new game (the sea rose; the lights hold back the Gloom; this one is failing; you're its new keeper); Maren's first lines spell out the loop; the journal's Lighthouse tab states the chapter's aim |
 | What do I need for the next lighthouse upgrade? | Journal → Lighthouse tab, and the tracked goal |
 | What did I gain on this trip? | **Haul** counter on HUD while away; return summary screen when you dock |
 | What is the tide doing? | **Tide dial** top-right: state, countdown, a little water-level gauge; banner on warning |

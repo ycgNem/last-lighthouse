@@ -28,6 +28,32 @@ export const PERF = {
    * retina screen, where the pixels are small enough that 2× looks much the same.
    */
   msaa4UpTo: 2_100_000,
+  /**
+   * Auto resolution (the default): the share of the screen's pixels drawn
+   * slides between `min` and 1 to keep the frame rate up.
+   */
+  resolution: {
+    min: 0.5,
+    step: 0.1,
+    /** Average frame times that count as slow (under 54 fps) and as having room to spare. */
+    slowFrame: 1 / 54,
+    fastFrame: 1 / 58,
+    /** Seconds of slow frames before stepping down, and of quick ones before stepping back up. */
+    react: 1.5,
+    settle: 4,
+    /** After a step down, wait this long before trying higher again (doubling each time it fails). */
+    holdAfterDrop: 20,
+    /**
+     * A step down is a trial: after `judge` seconds frames must be at least `gain`
+     * quicker, or it goes back up. A 50 Hz screen, a browser capped at 30 fps or a
+     * busy CPU isn't helped by fewer pixels. After a step that didn't help, wait
+     * `retryAfter` seconds (doubling) before trying again.
+     */
+    judge: 2,
+    gain: 0.06,
+    retryAfter: 30,
+    maxHold: 160,
+  },
 } as const;
 
 export interface WaveDef {

@@ -20,6 +20,8 @@ export const NPCS: Record<NpcId, NpcDef> = {
       wake: [
         "So you're the one who rowed in through the fog. Good. My hands won't do the stairs much longer.",
         "The lamp is failing. While it burns, nothing from the sea comes ashore. When it dies, so do we.",
+        "Here's the way of it, keeper. The sea gives; the light keeps. Go out, bring back what the tide leaves, and we build. A stronger lamp reaches further, and shows you more of the coast.",
+        "Mind the tide. Low water opens the flats and the wrecks, high water drowns them again. The horn sounds a minute before it turns.",
         "Start small. Odile has a hearth and no fish. Gullwash Shore is just down the cliff path.",
       ],
       lamp: ["The housing's cracked through. Scrap for the frame, sea glass for the panes, timber for the gallery. Bring it up here."],

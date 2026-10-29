@@ -16,13 +16,20 @@ pacing, hand-playing every encounter at speed, plus the cinematic upgrade beats,
 the chart's fog burning back, a beacon landing on the home chart and the debug
 overlay.
 
+**Feel and world pass (2026-10-28):** frame time down by roughly two-thirds at home
+(shared villager skeletons, shader prewarm, change-only HUD writes), a semi-fixed
+loop with no judder at high refresh, adaptive resolution with a Settings override;
+the dash rebuilt (exact distance, no slide, air hold, input buffer) **(T)**; a
+prologue and clearer guidance; the drowned world on every horizon; the shore and
+home dressed; gulls; and a proper sea chart.
+
 ---
 
 ## M0 — Foundation ✅
 
 - [x] Vite + TypeScript (`strict`) + Three.js pinned (`three@0.186.1`,
       `@types/three@0.186.0`)
-- [x] Fixed-timestep game loop, typed event bus, input with pointer lock (and a
+- [x] Semi-fixed-timestep game loop, typed event bus, input with pointer lock (and a
       free-look fallback where the browser refuses it) + rebindable actions
 - [x] Typed, data-driven definitions: items, recipes, skills, enemies, locations,
       lighthouse stages, projects, quests, NPCs, tide, balance
@@ -165,6 +172,15 @@ completion saves and survives reload.
 - [x] Accessibility: rebinding UI (keys swap, Esc cancels), high-contrast enemy
       shots (pale cores, dark rims), reduced motion (follows the OS on a new
       save), sound captions with direction; NPC lines were already text
+- [x] Premise up front: a four-card prologue on a new game, Maren's lines on the
+      loop and the tide, the chapter's aim and creed in the journal
+- [x] Guidance: materials name where they come from; the compass points to the
+      nearest source, then home; "Take it home" once you have everything
+- [x] A living coast **(B)**: the drowned world on every horizon, the shore's old
+      road, lamps, wreck and croft, the village's walls, garden, well, washing,
+      nets and memorial, gulls that wheel overhead and take off as you approach
+- [x] Sea chart: coast and shoals, the drowned town, routes, soundings, the beam
+      sweeping its reach, dead lights waiting in the fog
 
 ---
 
@@ -179,6 +195,9 @@ completion saves and survives reload.
       shadows only from what's near; the wreck peaks at 296). No image textures
       at all, so the texture budget is just the render targets. Scatter is merged
       rather than instanced, which is what the draw-call budget needed.
+      Frame time: one skeleton per villager (bone-texture uploads stalled the
+      GPU), shaders compiled during the travel fade, and an adaptive resolution
+      (Settings → Resolution; Auto by default) for GPU-bound screens.
 - [ ] Final checklist (from the original brief):
   - [x] The player cannot become trapped by the tide (rescue current, level
         design, and a sweep of every level at both tides in every progression

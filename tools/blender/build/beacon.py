@@ -229,6 +229,9 @@ quay.ring(0.16, 0.035, at=(56.55, 2.2, 3.0), mat=P["iron"], pitch=math.pi / 2, y
 quay.build("quay", tideline=True, grime=0.15)
 for i, z in enumerate((-3.2, 3.2)):
     dress("bollard", f"bollard_quay_{i}", 55.3, z, y=3.05, yaw=0.0)
+    # Gulls on the bollards and the quay edge: they go up as you land.
+    kit.empty(f"FX_perch_bollard_{i}", (55.3, 4.05, z))
+kit.empty("FX_perch_quay", (56.2, 3.6, 6.8))
 
 # ---------------------------------------------------------------- causeway
 
@@ -602,6 +605,7 @@ tower.build("tower", grime=0.25, smooth=35)
 LAMP_SCALE = 2.0
 prop("beacon_lamp", "beacon_lamp_top", 0, TOWER_Z, y=PLATFORM_Y + TOP + 0.45, yaw=0.0, scale=LAMP_SCALE)
 kit.empty("FX_beacon_lamp", (0, PLATFORM_Y + TOP + 0.45 + 1.02 * LAMP_SCALE, TOWER_Z))
+kit.empty("FX_gulls", (0, 0, TOWER_Z))
 
 # Where you carry the Ember: a stone plinth and a brass bowl at the door.
 plinth = MB()

@@ -31,7 +31,8 @@ src/
     Context.ts            GameContext: what gameplay modules may reach
     Encounters.ts         spawns a level's enemies per tide, ambushes, boss lookup
   core/
-    Loop.ts               fixed-step update (60 Hz) + variable render
+    Loop.ts               semi-fixed update (equal steps of at most 1/60 s that
+                          add up to the frame) + one render per frame
     EventBus.ts           typed pub/sub (GameEvents map)
     Input.ts              actions ↔ keys, pointer lock with a free-look fallback
     Save.ts               localStorage, schema version, migrations
@@ -41,7 +42,13 @@ src/
     ids.ts items.ts recipes.ts skills.ts enemies.ts nodes.ts
     locations.ts lighthouse.ts quests.ts npcs.ts tide.ts balance.ts
     controls.ts           actions, default keys, rebinding rules
-    presentation.ts       post, water and rain looks; shadow distance
+    presentation.ts       post, water and rain looks; shadow distance; the
+                          adaptive resolution's thresholds (PERF)
+    story.ts              the prologue cards and the chapter's aim and creed
+    scenery.ts            which horizon pieces stand where, per location
+    wildlife.ts           gulls: flock sizes, flight, how shy they are
+    chart.ts              the journal's sea chart: coast, islands, the drowned
+                          town, dead lights, routes, soundings
     villagers.ts          which Polyfork character each NPC is
     pacing.ts             the pacing simulation's player and the GDD's targets
     validate.ts           integrity + reachability (softlock) checks
@@ -49,6 +56,9 @@ src/
   systems/                ← pure logic (no three)
     tide.ts inventory.ts skills.ts crafting.ts progression.ts quests.ts
     economy.ts            plays the chapter on expected yields, trip by trip
+    guide.ts              where the materials you still need can be found now
+    resolution.ts         the auto resolution: steps down on slow frames, and
+                          keeps a step only if frames really got quicker
   physics/StaticCollider.ts   merged BVH: capsule resolve, rays, ground height
   player/
     PlayerController.ts   movement, jump (coyote time), dash, water states, rescue
@@ -66,6 +76,8 @@ src/
     Water.ts              Gerstner sea: depth colour, foam, glints, ripples, rain rings
     Sky.ts                sky dome, lights, fog, the environment map
     TideMaterial.ts       flood-warning glow for TIDE_ materials
+    Horizon.ts            the drowned world on the horizon, one static batch
+    Gulls.ts              wheeling flocks and shy perched gulls, all instanced
   enemies/                Enemy base + BrineCrab, DrownedSpitter, LanternWisp,
                           TideLurker, WreckGuardian; procedural part animation
   combat/Projectiles.ts   pooled bolts, orbs and mortars
@@ -78,6 +90,7 @@ src/
                           threat pips, toasts, banners, dialogue, fades
     Menus.ts menus.css    storage, stations, repairs, lighthouse, chart, journal,
                           settings, trip and defeat summaries
+    chart.ts              draws the sea chart as one SVG
 tests/                    vitest: systems, data/softlock, tide, exported levels,
                           the tide-trap sweep, the economy/pacing simulation
 tools/
@@ -101,7 +114,7 @@ main.ts
        ├─ player, viewmodel, fishing, projectiles, effects, loot
        └─ beams: home lighthouse, the distant one, the relit beacon
 
-update(dt = 1/60), while playing:
+update(dt ≤ 1/60, several per frame on a slow one), while playing:
   tide clock → buffs → player → encounters → projectiles → loot → nodes
   → triggers → interaction (focus, gather, fish, talk, stations) → combat → food
 render():
@@ -109,6 +122,14 @@ render():
     world pass (HDR, MSAA) → bloom → viewmodel pass (after bloom, so the
     lantern doesn't flood the screen) → tone mapping + sRGB → HUD
 ```
+
+Frame time: villagers share one skeleton per person and merge parts that share
+one (each skeleton is a bone texture uploaded every frame, and those uploads
+stall the GPU), every shader a place can show is compiled during the travel fade
+(`prewarm()`), and on a GPU-bound screen the resolution steps down until the
+frame rate holds, then creeps back up (`src/systems/resolution.ts`, tuned by
+`PERF.resolution`; Settings can fix it). A step that doesn't make frames quicker
+(a 50 Hz screen, a 30 fps cap, a busy CPU) is undone.
 
 Draw calls stay under 300 everywhere: `batchStatic()` merges every static mesh
 that shares a material (the originals stay, hidden, so collision and focus rays

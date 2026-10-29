@@ -15,7 +15,8 @@ export interface CompassMarker {
 export interface HudView {
   tide: TideReading;
   objective: { title: string; hint: string } | null;
-  checklist: (ItemStack & { have: number })[];
+  /** What the step needs; `where` names a place to find what's still missing. */
+  checklist: (ItemStack & { have: number; where?: string })[];
   hp: number;
   maxHp: number;
   dashCharges: number;
@@ -94,6 +95,7 @@ export class Hud {
   private readonly fadeEl: HTMLDivElement;
   private readonly cardTitle: HTMLDivElement;
   private readonly cardSub: HTMLDivElement;
+  private readonly storyEl: HTMLDivElement;
   private readonly flareEl: HTMLDivElement;
   private readonly gloomVeil: HTMLDivElement;
   private readonly swimVeil: HTMLDivElement;
@@ -166,11 +168,13 @@ export class Hud {
     this.cardTitle = el("div", "card-title", this.fadeEl);
     this.cardSub = el("div", "card-sub", this.fadeEl);
 
+    this.storyEl = el("div", "story hidden", root);
+
     this.overlay = el("div", "overlay", root);
     this.overlay.innerHTML = `
       <div class="card">
         <h1>The Last Lighthouse</h1>
-        <p class="sub">The lamp is failing. You are its new keeper.</p>
+        <p class="sub">The sea took the world. The last lights hold it back, and this one is failing.</p>
         <div class="controls"></div>
         <p class="go">Loading…</p>
         <p class="note hidden"></p>
@@ -225,20 +229,26 @@ export class Hud {
   }
 
   render(v: HudView, dt: number): void {
-    this.objTitle.textContent = v.objective?.title ?? "Chapter complete";
-    this.objHint.textContent = v.objective?.hint ?? "Saltmere burns again. The coast is yours to explore.";
-    this.objList.innerHTML = v.checklist
-      .map((c) => `<li class="${c.have >= c.qty ? "met" : ""}">${ITEMS[c.item].name}<span>${Math.min(c.have, c.qty)}/${c.qty}</span></li>`)
-      .join("");
+    text(this.objTitle, v.objective?.title ?? "Chapter complete");
+    text(this.objHint, v.objective?.hint ?? "Saltmere burns again. The coast is yours to explore.");
+    html(
+      this.objList,
+      v.checklist
+        .map((c) => {
+          const met = c.have >= c.qty;
+          return `<li class="${met ? "met" : ""}">${ITEMS[c.item].name}${!met && c.where ? `<small>${esc(c.where)}</small>` : ""}<span>${Math.min(c.have, c.qty)}/${c.qty}</span></li>`;
+        })
+        .join(""),
+    );
 
     const t = v.tide;
-    this.tideLabel.textContent = PHASE_LABEL[t.phase];
+    text(this.tideLabel, PHASE_LABEL[t.phase]);
     const verb = t.phase === "rising" || t.phase === "falling" ? "Settles in" : t.nextTurn === "rising" ? "Rises in" : "Falls in";
-    this.tideTime.textContent = `${verb} ${fmt(t.phaseTimeLeft)}`;
-    this.tideFill.style.height = `${8 + t.level * 84}%`;
+    text(this.tideTime, `${verb} ${fmt(t.phaseTimeLeft)}`);
+    css(this.tideFill, "height", `${(8 + t.level * 84).toFixed(1)}%`);
     this.tideBox.classList.toggle("warn", t.warning);
 
-    this.place.textContent = v.locationName + (v.safe ? " · safe" : "");
+    text(this.place, v.locationName + (v.safe ? " · safe" : ""));
     this.place.classList.toggle("safe", v.safe);
 
     const prompt = v.prompt ? (v.promptBlocked ? esc(v.prompt) : `<b>${esc(this.keys?.interact ?? "E")}</b> ${esc(v.prompt)}`) : "";
@@ -250,17 +260,20 @@ export class Hud {
     this.promptEl.classList.toggle("blocked", v.promptBlocked);
 
     const frac = Math.max(0, v.hp / v.maxHp);
-    this.hpFill.style.width = `${frac * 100}%`;
-    this.hpText.textContent = `${Math.ceil(Math.max(0, v.hp))} / ${v.maxHp}`;
-    this.dash.innerHTML = Array.from({ length: v.dashMax }, (_, i) =>
-      i < v.dashCharges ? `<i class="on"></i>` : i === v.dashCharges ? `<i style="--k:${v.dashRecharge.toFixed(2)}"></i>` : "<i></i>",
-    ).join("");
-    this.vignette.style.opacity = String(Math.max(frac < 0.3 ? (0.3 - frac) * 2 : 0, this.hurtTimer * 1.6));
-    this.gloomVeil.style.opacity = v.gloom.toFixed(3);
-    this.swimVeil.style.opacity = v.swim.toFixed(3);
+    css(this.hpFill, "width", `${(frac * 100).toFixed(1)}%`);
+    text(this.hpText, `${Math.ceil(Math.max(0, v.hp))} / ${v.maxHp}`);
+    html(
+      this.dash,
+      Array.from({ length: v.dashMax }, (_, i) =>
+        i < v.dashCharges ? `<i class="on"></i>` : i === v.dashCharges ? `<i style="--k:${v.dashRecharge.toFixed(2)}"></i>` : "<i></i>",
+      ).join(""),
+    );
+    css(this.vignette, "opacity", Math.max(frac < 0.3 ? (0.3 - frac) * 2 : 0, this.hurtTimer * 1.6).toFixed(3));
+    css(this.gloomVeil, "opacity", v.gloom.toFixed(3));
+    css(this.swimVeil, "opacity", v.swim.toFixed(3));
 
     const ready = v.flare >= 1;
-    this.flareEl.innerHTML = `<b>${esc(this.keys?.flare ?? "Q")}</b><i style="--k:${Math.min(1, v.flare).toFixed(3)}"></i>`;
+    html(this.flareEl, `<b>${esc(this.keys?.flare ?? "Q")}</b><i style="--k:${Math.min(1, v.flare).toFixed(2)}"></i>`);
     this.flareEl.classList.toggle("ready", ready);
     if (ready && this.flareWas < 1) {
       // Restart the "it's back" flash.
@@ -270,23 +283,23 @@ export class Hud {
     }
     this.flareWas = v.flare;
 
-    this.foodEl.innerHTML = v.food ? `<b>${esc(this.keys?.eat ?? "F")}</b> ${v.food.name} <span>×${v.food.count}</span>` : `<span class="dim">No food packed</span>`;
-    this.bagEl.innerHTML = `Satchel ${v.satchel.used}/${v.satchel.cap}${v.haul !== null ? ` · <span>Haul ${v.haul}</span>` : ""}`;
+    html(this.foodEl, v.food ? `<b>${esc(this.keys?.eat ?? "F")}</b> ${v.food.name} <span>×${v.food.count}</span>` : `<span class="dim">No food packed</span>`);
+    html(this.bagEl, `Satchel ${v.satchel.used}/${v.satchel.cap}${v.haul !== null ? ` · <span>Haul ${v.haul}</span>` : ""}`);
     this.bagEl.classList.toggle("full", v.satchel.used >= v.satchel.cap);
 
     if (v.gather !== null) {
       this.ringWrap.classList.remove("hidden");
-      this.ring.style.strokeDashoffset = String(125.7 * (1 - v.gather));
+      css(this.ring, "strokeDashoffset", (125.7 * (1 - v.gather)).toFixed(1));
     } else this.ringWrap.classList.add("hidden");
 
     if (v.boss) {
       this.bossEl.classList.remove("hidden");
-      this.bossName.textContent = v.boss.exposed ? `${v.boss.name} — heart exposed!` : v.boss.name;
-      this.bossFill.style.width = `${Math.max(0, v.boss.frac) * 100}%`;
+      text(this.bossName, v.boss.exposed ? `${v.boss.name} — heart exposed!` : v.boss.name);
+      css(this.bossFill, "width", `${(Math.max(0, v.boss.frac) * 100).toFixed(1)}%`);
       this.bossEl.classList.toggle("exposed", v.boss.exposed);
     } else this.bossEl.classList.add("hidden");
 
-    this.pips.innerHTML = v.threats.map((p) => `<i style="transform: rotate(${p.angle}rad) translateY(-150px); opacity:${(0.4 + p.level * 0.6).toFixed(2)}"></i>`).join("");
+    html(this.pips, v.threats.map((p) => `<i style="transform: rotate(${p.angle.toFixed(3)}rad) translateY(-150px); opacity:${(0.4 + p.level * 0.6).toFixed(2)}"></i>`).join(""));
 
     if (v.compass) {
       this.compass.classList.remove("hidden");
@@ -303,14 +316,14 @@ export class Hud {
         ["E", -Math.PI / 2],
       ] as const) {
         const d = toPx(yaw);
-        if (Math.abs(d) < 1.6) items.push(`<span class="dir" style="left:${50 + (d / 1.6) * 50}%">${label}</span>`);
+        if (Math.abs(d) < 1.6) items.push(`<span class="dir" style="left:${(50 + (d / 1.6) * 50).toFixed(2)}%">${label}</span>`);
       }
       for (const m of v.compass.markers) {
         const d = toPx(m.yaw);
         const clamped = Math.max(-1.55, Math.min(1.55, d));
-        items.push(`<span class="mk ${m.kind}${Math.abs(d) > 1.55 ? " edge" : ""}" style="left:${50 + (clamped / 1.6) * 50}%">${m.label}${m.dist !== undefined ? `<em>${Math.round(m.dist)} m</em>` : ""}</span>`);
+        items.push(`<span class="mk ${m.kind}${Math.abs(d) > 1.55 ? " edge" : ""}" style="left:${(50 + (clamped / 1.6) * 50).toFixed(2)}%">${esc(m.label)}${m.dist !== undefined ? `<em>${Math.round(m.dist)} m</em>` : ""}</span>`);
       }
-      this.compassTrack.innerHTML = items.join("");
+      html(this.compassTrack, items.join(""));
     } else this.compass.classList.add("hidden");
 
     if (this.bannerTimer > 0) {
@@ -401,6 +414,27 @@ export class Hud {
     this.cardSub.textContent = sub;
   }
 
+  /** A prologue card over a darkened screen (null hides it). */
+  story(card: { title: string; text: string } | null, index = 0, total = 0): void {
+    if (!card) {
+      if (this.storyEl.classList.contains("hidden") || this.storyEl.classList.contains("out")) return;
+      // Fade the last card away, then take it out of the way.
+      this.storyEl.classList.add("out");
+      window.setTimeout(() => {
+        if (this.storyEl.classList.contains("out")) this.storyEl.classList.add("hidden");
+      }, 900);
+      return;
+    }
+    const roman = ["I", "II", "III", "IV", "V", "VI"][index] ?? String(index + 1);
+    const go = esc(this.keys?.jump ?? "Space");
+    html(
+      this.storyEl,
+      `<div class="story-card" data-i="${index}"><div class="story-kicker">${roman} · ${esc(card.title)}</div><p>${esc(card.text)}</p>
+        <div class="story-go">Click or press <b>${go}</b> ${index + 1 < total ? "to continue" : "to begin"}</div></div>`,
+    );
+    this.storyEl.classList.remove("hidden", "out");
+  }
+
   get dialogueOpen(): boolean {
     return this.dlgLines.length > 0;
   }
@@ -427,4 +461,30 @@ export class Hud {
   setCrosshair(visible: boolean): void {
     this.crosshair.classList.toggle("hidden", !visible);
   }
+}
+
+// The HUD redraws every frame. Rewriting the same text or markup still costs the
+// browser a style and layout pass, so these write only what actually changed.
+const written = new WeakMap<HTMLElement, string>();
+
+function html(el: HTMLElement, value: string): void {
+  if (written.get(el) === value) return;
+  written.set(el, value);
+  el.innerHTML = value;
+}
+
+function text(el: HTMLElement, value: string): void {
+  if (written.get(el) === value) return;
+  written.set(el, value);
+  el.textContent = value;
+}
+
+const styled = new WeakMap<HTMLElement | SVGElement, Map<string, string>>();
+
+function css(el: HTMLElement | SVGElement, prop: "height" | "width" | "opacity" | "strokeDashoffset", value: string): void {
+  let seen = styled.get(el);
+  if (!seen) styled.set(el, (seen = new Map()));
+  if (seen.get(prop) === value) return;
+  seen.set(prop, value);
+  el.style[prop] = value;
 }

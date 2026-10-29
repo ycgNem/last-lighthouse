@@ -635,6 +635,290 @@ def cliff():
     return m.build("HOME_cliff", loc=(0, 0, 0), ao=0.45, ao_dist=2.5, grime=0, ground=False, tideline=True)
 
 
+# ---------------------------------------------------------------- dressing
+# What makes the Rest a place people live, not a set: field walls, a kitchen
+# garden, the washing out, nets drying, a woodpile, the well, Tib's boat up on
+# trestles, and the stone for those the sea took. HomeLevel places them
+# (DRESSING there); each origin is its base, centred, and anything you could
+# walk into carries a COL_ box.
+
+SOIL = Paint(P["sand"].mat, 0x4A3A2A)
+KALE = [Paint(P["moss"].mat, c) for c in (0x4E6B3A, 0x5C7A44, 0x3F5A34)]
+LINEN = [Paint(P["cloth"].mat, c) for c in (0xE6E1D3, 0xC9D6DE, 0xB24A3A, 0xD9C27A, 0x8EA6B8)]
+GORSE = Paint(P["moss"].mat, 0x3E5530)
+BLOOM = Paint(P["paint_yellow"].mat, 0xE3B93A)
+
+
+def wall_run(x):
+    """4 m of dry-stone field wall, 0.9 m high: courses of flat stones,
+    battered in, coping stones on edge along the top."""
+    m = MB(400)
+    rnd = m.rnd
+    L = 4.0
+    field = [P["stone_dark"], P["rock"], Paint(STONE, 0x8F8A7E), Paint(STONE, 0x9C978A)]
+    for course in range(4):
+        y = course * 0.2
+        w = 0.62 - course * 0.06
+        u = -L / 2 + rnd.random() * 0.2
+        while u < L / 2 - 0.05:
+            sl = min(0.22 + rnd.random() * 0.45, L / 2 - u)
+            for side in (-1, 1):
+                h = 0.15 + rnd.random() * 0.07
+                m.box((sl - 0.04, h, w / 2 - 0.03), at=(u + sl / 2, y + (0.19 - h) * rnd.random(), side * w / 4), mat=field[int(rnd.random() * len(field))],
+                      yaw=(rnd.random() - 0.5) * 0.14, pitch=(rnd.random() - 0.5) * 0.08, roll=(rnd.random() - 0.5) * 0.1, tint=0.72 + 0.28 * rnd.random(), bev=0.035)
+            u += sl
+    u = -L / 2
+    while u < L / 2 - 0.05:
+        t = 0.12 + rnd.random() * 0.06
+        m.box((t, 0.24 + rnd.random() * 0.06, 0.4), at=(u + t / 2, 0.8, 0), mat=P["rock"] if rnd.random() < 0.5 else P["stone_dark"], roll=(rnd.random() - 0.5) * 0.25, tint=0.75 + 0.25 * rnd.random(), bev=0.02)
+        u += t + 0.01
+    for k in range(3):
+        m.sphere(0.18 + rnd.random() * 0.1, at=(-1.5 + k * 1.4 + rnd.random() * 0.3, 0.0, (rnd.random() - 0.5) * 0.7), mat=P["moss"], scale=(1.4, 0.45, 1.0), subdiv=1)
+    ob = m.build("HOME_wall_run", loc=(x, 0, 0), ao=0.55, ao_dist=0.5, grime=0.2)
+    col("COL_wall", (L, 0.95, 0.6), (0, 0, 0), ob)
+    return ob
+
+
+def garden(x):
+    """A kitchen garden: dug beds of kale and onions, a bean wigwam, a
+    scarecrow in an old oilskin keeping the gulls honest."""
+    m = MB(410)
+    rnd = m.rnd
+    for bz in (-1.3, 0.0, 1.3):
+        m.box((5.6, 0.16, 1.0), at=(0, -0.05, bz), mat=SOIL, tint=0.85 + 0.15 * rnd.random(), bev=0.06)
+        for k in range(9):
+            px = -2.4 + k * 0.6 + (rnd.random() - 0.5) * 0.1
+            if bz < 0:
+                for leaf in range(4):
+                    a = leaf / 4 * math.tau + rnd.random()
+                    m.sphere(0.13, at=(px + math.cos(a) * 0.09, 0.14, bz + math.sin(a) * 0.09), mat=KALE[(k + leaf) % 3], scale=(1.0, 0.7, 1.0), subdiv=1)
+                m.sphere(0.1, at=(px, 0.2, bz), mat=KALE[1], subdiv=1)
+            else:
+                for b in range(3):
+                    m.tube([(px + (b - 1) * 0.07, 0.1, bz), (px + (b - 1) * 0.12, 0.42 + rnd.random() * 0.12, bz + (rnd.random() - 0.5) * 0.1)], [0.018, 0.006], mat=KALE[2], segs=4)
+    # Bean poles, tied at the top, leaves climbing.
+    wx, wz = 2.9, -1.9
+    for k in range(5):
+        a = k / 5 * math.tau
+        m.tube([(wx + math.cos(a) * 0.45, 0.0, wz + math.sin(a) * 0.45), (wx, 1.9, wz)], 0.022, mat=P["driftwood"], segs=4)
+        for j in range(5):
+            t = 0.15 + j * 0.15
+            m.sphere(0.09, at=(wx + math.cos(a) * 0.45 * (1 - t), 1.9 * t, wz + math.sin(a) * 0.45 * (1 - t)), mat=KALE[j % 3], scale=(1.0, 0.6, 1.0), subdiv=1)
+    # The scarecrow.
+    sx, sz = -2.9, 1.9
+    m.box((0.08, 1.9, 0.08), at=(sx, 0.0, sz), mat=P["driftwood_dark"], bev=0.01)
+    m.box((1.3, 0.07, 0.07), at=(sx, 1.4, sz), mat=P["driftwood_dark"], centered=True, bev=0.01)
+    m.lathe([(0.0, 0.85), (0.3, 0.88), (0.34, 1.2), (0.3, 1.45), (0.16, 1.5), (0.0, 1.5)], at=(sx, 0, sz), mat=Paint(P["paint_yellow"].mat, 0x9C8A3C), segs=8)
+    for side in (-1, 1):
+        m.box((0.42, 0.24, 0.2), at=(sx + side * 0.48, 1.3, sz), mat=Paint(P["paint_yellow"].mat, 0x9C8A3C), roll=side * 0.15, bev=0.02)
+    m.uvsphere(0.16, at=(sx, 1.68, sz), mat=P["canvas"], segs=8, rings=6)
+    m.cyl(0.24, 0.24, 0.03, at=(sx, 1.8, sz), mat=P["leather"], segs=10)
+    m.cyl(0.13, 0.11, 0.16, at=(sx, 1.81, sz), mat=P["leather"], segs=10)
+    ob = m.build("HOME_garden", loc=(x, 0, 0), ao=0.5, ao_dist=0.5, grime=0.1)
+    col("COL_scarecrow", (0.3, 1.9, 0.3), (sx, 0, sz), ob)
+    return ob
+
+
+def washing_line(x):
+    """Two T-posts and a line between them, with the week's wash on it."""
+    m = MB(420)
+    rnd = m.rnd
+    span = 5.2
+    for sx in (-1, 1):
+        m.box((0.11, 2.15, 0.11), at=(sx * span / 2, 0.0, 0), mat=P["timber"], bev=0.015)
+        m.box((0.08, 0.08, 0.7), at=(sx * span / 2, 2.05, 0), mat=P["timber"], centered=True, bev=0.01)
+    for lz in (-0.3, 0.3):
+        pts = [(-span / 2 + span * t, 2.05 - 0.28 * 4 * t * (1 - t), lz) for t in (k / 10 for k in range(11))]
+        m.tube(pts, 0.008, mat=P["rope"], segs=4, cap=False)
+    # Sheets and shirts pegged out on the front line, a little breeze in them.
+    u = -span / 2 + 0.35
+    k = 0
+    while u < span / 2 - 0.6:
+        w = 0.55 + rnd.random() * 0.75
+        t = (u + w / 2 + span / 2) / span
+        y = 2.05 - 0.28 * 4 * t * (1 - t)
+        h = 0.7 + rnd.random() * 0.5
+        m.box((w, h, 0.02), at=(u + w / 2, y - h, -0.3 + 0.03), mat=LINEN[k % len(LINEN)], pitch=0.08 + rnd.random() * 0.08, tint=0.9 + 0.1 * rnd.random(), bev=0)
+        for e in (0.06, w - 0.06):
+            m.box((0.025, 0.07, 0.03), at=(u + e, y - 0.04, -0.3), mat=P["timber_pale"], bev=0)
+        u += w + 0.12
+        k += 1
+    m.box((0.5, 0.35, 0.35), at=(-span / 2 + 0.6, 0.0, 0.6), mat=P["rope"], bev=0.04)
+    ob = m.build("HOME_washing_line", loc=(x, 0, 0), ao=0.45, ao_dist=0.5, grime=0.05)
+    for sx in (-1, 1):
+        col(f"COL_post{(sx + 1) // 2}", (0.2, 2.2, 0.2), (sx * span / 2, 0, 0), ob)
+    return ob
+
+
+def net_frame(x):
+    """A drying frame by the dock: two posts and a pole with a net hung over
+    it in deep folds, cork floats along its edge."""
+    m = MB(430)
+    rnd = m.rnd
+    W, H = 3.6, 2.0
+    for sx in (-1, 1):
+        m.box((0.13, H + 0.1, 0.13), at=(sx * W / 2, 0.0, 0), mat=P["driftwood_dark"], bev=0.015)
+    m.cyl(0.06, 0.06, W + 0.5, at=(0, H, 0), mat=P["driftwood"], roll=ACROSS, centered=True, segs=8)
+    netcol = Paint(P["cloth"].mat, 0x4A5046)
+    # Open mesh, not a sheet: cords along and across, so the sea shows through.
+    NI, NJ = 17, 8
+    for side in (-1, 1):
+        rows = []
+        for j in range(NJ):
+            t = j / (NJ - 1)
+            row = []
+            for i in range(NI):
+                s = i / (NI - 1)
+                u = -W / 2 + 0.1 + (W - 0.2) * s
+                fold = 0.08 * math.sin(s * 20 + side) * t
+                row.append((u, H - 0.06 - t * (H - 0.35) - 0.1 * math.sin(s * math.pi) * t, side * (0.08 + t * 0.32) + fold))
+            rows.append(row)
+        for row in rows:
+            m.tube(row, 0.012, mat=netcol, segs=3)
+        for i in range(NI):
+            m.tube([row[i] for row in rows], 0.012, mat=netcol, segs=3)
+        for i in range(0, NI, 4):
+            px, py, pz = rows[-1][i]
+            m.sphere(0.06, at=(px, py - 0.03, pz), mat=Paint(P["cloth"].mat, 0xB08A55), scale=(1.0, 0.8, 1.0), subdiv=1)
+    # Where it folds over the pole the net bunches into a rope of its own.
+    m.tube([(-W / 2 + 0.05 + (W - 0.1) * k / 10, H + 0.02 + 0.025 * math.sin(k * 2.3), 0.0) for k in range(11)], 0.085, mat=netcol, segs=6)
+    ob = m.build("HOME_net_frame", loc=(x, 0, 0), ao=0.5, ao_dist=0.5, grime=0.1)
+    col("COL_net_frame", (W + 0.2, H, 0.8), (0, 0, 0), ob)
+    return ob
+
+
+def woodpile(x):
+    """Split logs stacked between two posts under a scrap of tarred canvas, and
+    the chopping block with the axe left in it."""
+    m = MB(440)
+    rnd = m.rnd
+    L, rows = 2.4, 5
+    for sx in (-1, 1):
+        m.box((0.1, 1.15, 0.1), at=(sx * L / 2, 0.0, 0.0), mat=P["timber"], bev=0.01)
+    for r in range(rows):
+        n = 9 - (r % 2)
+        for i in range(n):
+            px = -L / 2 + 0.16 + (L - 0.32) * (i + (0.5 if r % 2 else 0.0)) / 9
+            m.lathe([(0.0, -0.32), (0.11, -0.32), (0.11, 0.32), (0.0, 0.32)], at=(px, 0.12 + r * 0.2, 0.0), mat=P["timber_light"] if (i + r) % 3 else P["timber_pale"], segs=6, pitch=math.pi / 2, tint=0.85 + 0.25 * rnd.random(), arc=None)
+    m.box((L + 0.3, 0.03, 0.9), at=(0, 1.13, 0.0), mat=P["tar"], pitch=0.15, centered=True, bev=0)
+    # Chopping block and axe.
+    bx, bz = L / 2 + 0.8, 0.5
+    m.cyl(0.28, 0.3, 0.5, at=(bx, 0.0, bz), mat=P["timber"], segs=10, bev=0.02)
+    m.cyl(0.25, 0.25, 0.012, at=(bx, 0.5, bz), mat=P["timber_pale"], segs=10, bev=0)
+    m.box((0.05, 0.75, 0.05), at=(bx + 0.1, 0.48, bz), mat=P["timber_pale"], roll=-0.5, bev=0.005)
+    m.box((0.2, 0.12, 0.03), at=(bx - 0.04, 0.47, bz), mat=P["iron"], roll=-0.5, bev=0.005)
+    for k in range(5):
+        a = rnd.random() * math.tau
+        m.box((0.3, 0.06, 0.1), at=(bx + math.cos(a) * 0.55, 0.0, bz + math.sin(a) * 0.55), mat=P["timber_pale"], yaw=a, bev=0.01)
+    ob = m.build("HOME_woodpile", loc=(x, 0, 0), ao=0.55, ao_dist=0.4, grime=0.15)
+    col("COL_woodpile", (L + 0.3, 1.2, 0.8), (0, 0, 0), ob)
+    col("COL_block", (0.6, 0.55, 0.6), (bx, 0, bz), ob)
+    return ob
+
+
+def well(x):
+    """The village well: a round stone kerb, a little slate roof on two posts,
+    the winch and its rope, a bucket on the kerb."""
+    m = MB(450)
+    rnd = m.rnd
+    R = 0.85
+    for k in range(14):
+        a = k / 14 * math.tau
+        for c in range(3):
+            aa = a + (0.5 / 14 * math.tau if c % 2 else 0)
+            m.box((0.38, 0.24, 0.3), at=(math.cos(aa) * R, c * 0.25, math.sin(aa) * R), mat=P["stone_dark"] if (k + c) % 3 else P["rock"], yaw=-aa, tint=0.8 + 0.2 * rnd.random(), bev=0.03)
+    m.cyl(R - 0.12, R - 0.12, 0.02, at=(0, 0.55, 0), mat=WATER, segs=16, bev=0)
+    for sx in (-1, 1):
+        m.box((0.13, 2.1, 0.13), at=(sx * (R + 0.05), 0.0, 0), mat=P["timber"], bev=0.015)
+    m.cyl(0.08, 0.08, 2 * R + 0.3, at=(0, 1.3, 0), mat=P["timber_light"], roll=ACROSS, centered=True, segs=8)
+    m.tube([(0.2, 1.3, 0.0), (0.2, 0.95, 0.0)], 0.015, mat=P["rope"], segs=4)
+    m.box((0.2, 0.06, 0.04), at=(R + 0.2, 1.3, 0.0), mat=P["iron"], centered=True, bev=0)
+    for side in (-1, 1):
+        m.box((2 * R + 0.7, 0.06, 0.9), at=(0, 2.25, side * 0.34), mat=SLATE, pitch=-side * 0.55, centered=True, bev=0.01)
+    m.lathe([(0.0, 0.0), (0.13, 0.0), (0.16, 0.24), (0.0, 0.24)], at=(R * 0.75, 0.75, R * 0.55), mat=P["timber"], segs=8, staves=0.15)
+    ob = m.build("HOME_well", loc=(x, 0, 0), ao=0.55, ao_dist=0.5, grime=0.15)
+    col("COL_well", (2 * R + 0.3, 0.8, 2 * R + 0.3), (0, 0, 0), ob)
+    return ob
+
+
+def boat_trestles(x):
+    """Tib's other boat, upturned on two trestles while he mends her: a gap of
+    fresh planks in her side, the rest of them on the grass with the tar pot."""
+    m = MB(460)
+    rnd = m.rnd
+    # Round bilges (low fullness) so she reads as a hull, not a box, upside down.
+    st = [(-2.0, 0.6, 0.6, 0.0, 0.55), (-1.2, 0.8, 0.64, 0.0, 0.5), (0.0, 0.86, 0.66, 0.0, 0.45), (1.2, 0.74, 0.69, 0.0, 0.38), (1.95, 0.34, 0.74, 0.0, 0.25), (2.15, 0.04, 0.78, 0.0, 0.1)]
+    base = 0.95
+    shell = hull_sections(st, 6, overlap=0.02)
+    flipped = []
+    for sec, (_z, _b, d, yk, _f) in zip(shell, st):
+        flipped.append([(px, base + yk + d - py, pz) for px, py, pz in sec])
+    strakes = [(P["hull"], 1.0 if k % 2 else 0.85) for k in range(len(flipped[0]) - 1)]
+    strakes[2] = (P["timber_pale"], 1.0)
+    m.loft(flipped, strips=strakes, flip=True)
+    # Her transom board, closing the stern.
+    z0, b0, d0, _yk0, f0 = st[0]
+    half = []
+    for k in range(9):
+        u = k / 8
+        half.append((2 * (1 - u) * u * b0 * f0 + u * u * b0, base + d0 - u * u * d0))
+    m.prism(list(reversed(half)) + [(-hx, hy) for hx, hy in half[1:]], 0.05, at=(0, 0, z0 + 0.03), mat=P["hull_dark"], bev=0)
+    m.tube([(0.0, base + d + 0.03, z) for z, _b, d, _yk, _f in st], 0.05, mat=P["hull_dark"], segs=6)
+    for tz in (-1.2, 1.1):
+        for sx in (-1, 1):
+            m.box((0.08, base + 0.05, 0.08), at=(sx * 0.78, 0.0, tz), mat=P["timber"], roll=sx * 0.18, bev=0.01)
+        m.box((1.95, 0.1, 0.12), at=(0, base - 0.05, tz), mat=P["timber"], bev=0.01)
+    for k in range(4):
+        m.plank(2.2, 0.16, 0.035, at=(1.2 + k * 0.04, 0.035 * k, 1.9 + k * 0.05), mat=P["timber_pale"], yaw=0.3 + k * 0.05, warp=0.05)
+    m.cyl(0.13, 0.12, 0.22, at=(-1.0, 0.0, 1.7), mat=P["tar"], segs=10)
+    m.box((0.03, 0.4, 0.03), at=(-0.98, 0.12, 1.7), mat=P["timber_pale"], roll=0.4, bev=0)
+    ob = m.build("HOME_boat_trestles", loc=(x, 0, 0), ao=0.55, ao_dist=0.6, grime=0.1)
+    col("COL_boat", (1.9, 1.7, 4.4), (0, 0, 0), ob)
+    return ob
+
+
+def memorial(x):
+    """The stone for those the sea took: a tall slab with a slate plaque, a
+    ring of small stones the villagers leave, jam-jar lights and wild flowers."""
+    m = MB(470)
+    rnd = m.rnd
+    m.box((0.9, 2.1, 0.3), at=(0, -0.1, 0), mat=P["stone"], roll=0.03, bev=0.06)
+    m.box((0.56, 0.7, 0.04), at=(0, 1.0, 0.16), mat=SLATE, bev=0.01)
+    for k in range(5):
+        m.box((0.34 - k * 0.03, 0.025, 0.01), at=(0, 1.55 - k * 0.12, 0.185), mat=Paint(STONE, 0xBFB8A8), bev=0)
+    for k in range(22):
+        a = k / 22 * math.tau + rnd.random() * 0.2
+        r = 0.95 + rnd.random() * 0.25
+        m.rock(0.08 + rnd.random() * 0.07, at=(math.cos(a) * r, 0.0, math.sin(a) * r * 0.75 + 0.15), mat=P["stone"] if k % 3 else P["rock"], seed=470 + k, subdiv=1, squash=0.7)
+    for k, (jx, jz) in enumerate(((-0.55, 0.45), (0.15, 0.6), (0.6, 0.38))):
+        m.lathe([(0.0, 0.0), (0.06, 0.0), (0.065, 0.13), (0.045, 0.16), (0.0, 0.16)], at=(jx, 0.0, jz), mat=P["glass_amber"], segs=8)
+    for k in range(9):
+        a = rnd.random() * math.tau
+        r = 0.35 + rnd.random() * 0.4
+        fx, fz = math.cos(a) * r, 0.3 + math.sin(a) * r * 0.5
+        m.tube([(fx, 0.0, fz), (fx + 0.02, 0.22, fz)], 0.006, mat=P["moss"], segs=3)
+        m.sphere(0.035, at=(fx + 0.02, 0.24, fz), mat=BLOOMS[k % len(BLOOMS)], subdiv=0)
+    ob = m.build("HOME_memorial", loc=(x, 0, 0), ao=0.55, ao_dist=0.5, grime=0.15)
+    col("COL_memorial", (1.0, 2.0, 0.45), (0, 0, 0), ob)
+    return ob
+
+
+def gorse(x):
+    """A gorse bush: a mound of dark spiny clumps, yellow flower in it."""
+    m = MB(480)
+    rnd = m.rnd
+    for k in range(9):
+        a = rnd.random() * math.tau
+        d = rnd.random() * 0.55
+        r = 0.32 + rnd.random() * 0.22
+        m.rock(r, at=(math.cos(a) * d, r * 0.25, math.sin(a) * d), mat=GORSE, seed=480 + k, subdiv=1, squash=0.75, jitter=0.45, tint=0.85 + 0.25 * rnd.random())
+    for k in range(26):
+        a = rnd.random() * math.tau
+        d = rnd.random() * 0.7
+        m.sphere(0.04, at=(math.cos(a) * d * 0.8, 0.2 + rnd.random() * 0.28, math.sin(a) * d * 0.8), mat=BLOOM, subdiv=0)
+    return m.build("HOME_gorse", loc=(x, 0, 0), ao=0.5, ao_dist=0.4, grime=0.1)
+
+
 # ------------------------------------------------------------------ build
 
 lighthouse()
@@ -653,5 +937,14 @@ dock_frame(95)
 sailboat(104)
 rocks(112)
 cliff()
+wall_run(120)
+garden(128)
+washing_line(138)
+net_frame(146)
+woodpile(152)
+well(158)
+boat_trestles(164)
+memorial(172)
+gorse(178)
 
 kit.save_and_export("art/blender/home/home.blend", "public/assets/models/home.glb")

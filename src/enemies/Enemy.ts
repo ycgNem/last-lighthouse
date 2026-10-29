@@ -120,7 +120,7 @@ export abstract class Enemy implements Hittable {
       if (this.dazzled <= 0) this.recoverFromFlare();
     } else this.think(dt, ctx);
     this.animate(dt, ctx);
-    this.applyLook(ctx.time);
+    this.applyLook(dt, ctx.time);
   }
 
   /**
@@ -155,8 +155,8 @@ export abstract class Enemy implements Hittable {
     this.setState("chase");
   }
 
-  private applyLook(time: number): void {
-    this.flash = Math.max(0, this.flash - 1 / 60);
+  private applyLook(dt: number, time: number): void {
+    this.flash = Math.max(0, this.flash - dt);
     const pulse = 0.85 + 0.15 * Math.sin(time * 6);
     for (const g of this.glows) g.emissiveIntensity = (1 + this.threat * 5) * pulse;
     for (const m of this.mats) {

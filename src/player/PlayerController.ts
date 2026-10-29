@@ -24,6 +24,7 @@ export interface PlayerEnv {
 export type WaterState = "dry" | "wading" | "swimming";
 
 const P = BALANCE.player;
+const D = P.dash;
 export const BODY_HEIGHT = 1.8;
 /** Radians per second with the cursor at the very edge (free-look fallback only). */
 const EDGE_TURN_RATE = 2.2;
@@ -33,6 +34,13 @@ const COYOTE_TIME = 0.12;
 const segment = new THREE.Line3();
 const delta = new THREE.Vector3();
 const normal = new THREE.Vector3();
+const DOWN = new THREE.Vector3(0, -1, 0);
+const probe = new THREE.Vector3();
+
+/** Metres a dash has covered `t` seconds in: its speed falls in a straight line from `peak` to `exit`. */
+function dashCovered(t: number, peak: number, exit: number): number {
+  return peak * t + ((exit - peak) * t * t) / (2 * D.duration);
+}
 
 export class PlayerController {
   /** Feet position. */
@@ -47,15 +55,21 @@ export class PlayerController {
 
   dashCharges = 1;
   private dashRecharge = 0;
-  private dashTime = 0;
+  private dashCooldown: number = D.cooldown;
+  /** Seconds into the current dash, or -1 when not dashing. */
+  private dashT = -1;
+  private dashBuffer = 0;
+  private dashGrounded = false;
   private readonly dashDir = new THREE.Vector3();
   invulnerable = 0;
   private swimTime = 0;
   private sinceGround = 0;
   private bobPhase = 0;
   bobOffset = 0;
-  /** 0..1, decays after a dash; the camera uses it for a small FOV kick. */
+  /** 0..1 through a dash and easing off after; the camera widens with it. */
   dashKick = 0;
+  /** -1..1, how far the current dash goes to the right (+) or left; the camera leans into it. */
+  dashSide = 0;
   /** 0..1, decays after landing; the camera dips. */
   landKick = 0;
 
@@ -70,7 +84,7 @@ export class PlayerController {
     this.yaw = yaw;
     this.pitch = 0;
     this.swimTime = 0;
-    this.dashTime = 0;
+    this.dashT = -1;
   }
 
   get eye(): THREE.Vector3 {
@@ -117,16 +131,27 @@ export class PlayerController {
       if (wish.lengthSq() > 0) wish.normalize();
       this.updateDash(dt, input, env, wish, fwd);
     } else {
-      this.dashTime = 0;
+      this.dashT = -1;
     }
 
     const depth = env.waterY - this.position.y;
     this.water = depth > WATER_DEPTH.swim ? "swimming" : depth > WATER_DEPTH.wade ? "wading" : "dry";
     const waterMul = this.water === "swimming" ? P.swimSpeedMul : this.water === "wading" ? P.wadeSpeedMul : 1;
 
-    if (this.dashTime > 0) {
-      this.velocity.x = this.dashDir.x * (P.dash.distance / P.dash.duration);
-      this.velocity.z = this.dashDir.z * (P.dash.distance / P.dash.duration);
+    const dashing = this.dashT >= 0;
+    if (dashing) {
+      // Fast off the mark, easing to walking pace by the end: exactly `distance`
+      // whatever the frame rate, then straight back to walking with no slide.
+      const exit = P.walkSpeed * waterMul * env.speedMul;
+      const peak = (2 * D.distance) / D.duration - exit;
+      const a = this.dashT;
+      const b = Math.min(a + dt, D.duration);
+      const speed = dt > 0 ? (dashCovered(b, peak, exit) - dashCovered(a, peak, exit) + exit * (a + dt - b)) / dt : peak;
+      this.velocity.x = this.dashDir.x * speed;
+      this.velocity.z = this.dashDir.z * speed;
+      const u = b / D.duration;
+      this.dashKick = damp(this.dashKick, 1 - u * 0.5, 25, dt);
+      this.dashT = a + dt >= D.duration ? -1 : a + dt;
     } else {
       const control = this.onGround || this.water !== "dry" ? 1 : P.airControl;
       const target = wish.multiplyScalar(P.walkSpeed * waterMul * env.speedMul);
@@ -148,12 +173,14 @@ export class PlayerController {
         this.sinceGround = COYOTE_TIME;
         this.onJump?.();
       }
-      this.velocity.y -= P.gravity * dt;
+      // A dash holds you nearly level instead of dropping (rising still slows as normal).
+      this.velocity.y -= P.gravity * (dashing && this.velocity.y <= 0 ? D.fallHold : 1) * dt;
     }
 
     const fallSpeed = -this.velocity.y;
     const wasGrounded = this.onGround;
     this.moveAndCollide(dt, env);
+    if (dashing && this.dashGrounded && !this.onGround && this.velocity.y <= 0) this.stickToGround(env);
     if (!wasGrounded && this.onGround && fallSpeed > 4) {
       this.landKick = clamp(fallSpeed / 14, 0.2, 1);
       this.onLand?.(fallSpeed);
@@ -164,7 +191,7 @@ export class PlayerController {
 
     // Head bob.
     const planar = Math.hypot(this.velocity.x, this.velocity.z);
-    if (this.onGround && planar > 0.5) {
+    if (this.onGround && planar > 0.5 && !dashing) {
       this.bobPhase += dt * planar * 1.9;
       this.bobOffset = Math.sin(this.bobPhase * 2) * 0.035;
     } else {
@@ -172,34 +199,49 @@ export class PlayerController {
     }
 
     this.invulnerable = Math.max(0, this.invulnerable - dt);
-    this.dashKick = damp(this.dashKick, 0, 8, dt);
+    if (!dashing) this.dashKick = damp(this.dashKick, 0, 7, dt);
+    this.dashSide = this.dashDir.dot(normal.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw))) * this.dashKick;
     this.landKick = damp(this.landKick, 0, 9, dt);
   }
 
+  /** Keeps a dash along the ground on it going downhill, rather than launching off the slope. */
+  private stickToGround(env: PlayerEnv): void {
+    const p = this.position;
+    const hit = env.collider.raycast(probe.set(p.x, p.y + 0.3, p.z), DOWN, 0.3 + D.stick);
+    if (!hit || (hit.face?.normal.y ?? 0) < 0.5) return;
+    p.y = hit.point.y;
+    this.velocity.y = 0;
+    this.onGround = true;
+  }
+
   private updateDash(dt: number, input: Input, env: PlayerEnv, wish: THREE.Vector3, fwd: THREE.Vector3): void {
-    this.dashTime = Math.max(0, this.dashTime - dt);
     this.dashCharges = Math.min(this.dashCharges, env.dashCharges);
-    const cooldown = P.dash.cooldown * env.dashCooldownMul;
+    this.dashCooldown = D.cooldown * env.dashCooldownMul;
     if (this.dashCharges < env.dashCharges) {
       this.dashRecharge += dt;
-      if (this.dashRecharge >= cooldown) {
+      if (this.dashRecharge >= this.dashCooldown) {
         this.dashCharges++;
         this.dashRecharge = 0;
       }
     }
-    if (input.pressed("dash") && this.dashCharges > 0 && this.dashTime === 0) {
+    // A press a moment early (mid-dash, or just before a charge returns) still counts.
+    this.dashBuffer = input.pressed("dash") ? D.buffer : Math.max(0, this.dashBuffer - dt);
+    if (this.dashBuffer > 0 && this.dashCharges > 0 && this.dashT < 0) {
+      this.dashBuffer = 0;
       this.dashCharges--;
-      this.dashTime = P.dash.duration;
-      this.invulnerable = Math.max(this.invulnerable, P.dash.iframes);
+      this.dashT = 0;
+      this.invulnerable = Math.max(this.invulnerable, D.iframes);
       this.dashDir.copy(wish.lengthSq() > 0 ? wish : fwd);
-      this.dashKick = 1;
+      this.dashGrounded = this.onGround;
+      // Dashing out of a fall levels you out.
+      if (this.velocity.y < 0) this.velocity.y = 0;
       this.onDash?.();
     }
   }
 
   /** 0..1 progress of the dash recharge, for the HUD. */
   get dashRechargeFraction(): number {
-    return this.dashRecharge / P.dash.cooldown;
+    return this.dashRecharge / this.dashCooldown;
   }
 
   private moveAndCollide(dt: number, env: PlayerEnv): void {

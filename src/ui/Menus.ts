@@ -7,14 +7,25 @@ import { PROJECTS, STAGES, type Requirements } from "../data/lighthouse";
 import { LOCATIONS } from "../data/locations";
 import { RECIPES, type RecipeDef } from "../data/recipes";
 import { MAX_LEVEL, SKILLS } from "../data/skills";
+import { CHAPTER_ONE } from "../data/story";
 import type { GameState } from "../state/GameState";
 import { craftBlock, type CraftBlock } from "../systems/crafting";
 import { available, satchelCapacity, stored } from "../systems/inventory";
 import { canTravelOffshore, isMet, missingFor, nextStage } from "../systems/progression";
 import { levelForXp, levelProgress, skillLevel } from "../systems/skills";
+import { chartSvg } from "./chart";
 
 // Full-screen panels opened from stations at home and from the journal.
 // Plain DOM; every button carries a data-act attribute handled in one place.
+
+/** Settings → Resolution: 0 is automatic. */
+const RENDER_SCALES: readonly [number, string][] = [
+  [0, "Auto (keeps the frame rate up)"],
+  [1, "100%"],
+  [0.85, "85%"],
+  [0.7, "70%"],
+  [0.55, "55%"],
+];
 
 export interface MenuHost {
   readonly state: GameState;
@@ -227,29 +238,21 @@ export class Menus {
         ${reveals ? `<p class="reveal">Reveals on the chart: <strong>${reveals}</strong></p>` : ""}
         ${here ? `<button data-act="upgrade" class="primary wide" ${ok ? "" : "disabled"}>${ok ? "Upgrade the lighthouse" : "Gather what's missing"}</button>` : `<p class="reveal">This happens at <strong>${LOCATIONS[next.performedAt].name}</strong>.</p>`}</div>`;
     }
-    return `<h2>The Lighthouse <small>${STAGES[s.stage]!.name}</small></h2><ol class="track">${track}</ol>${card}`;
+    return `<h2>The Lighthouse <small>${STAGES[s.stage]!.name}</small></h2>
+      <p class="chapter"><strong>${CHAPTER_ONE.title}.</strong> ${CHAPTER_ONE.aim}</p>
+      <p class="creed">${CHAPTER_ONE.creed}</p><ol class="track">${track}</ol>${card}`;
   }
 
   private chart(): string {
     const s = this.host.state;
     const offshore = canTravelOffshore(s);
-    // A little sea chart: the beam's reach is a lit circle, everything past it is fog.
-    const pos: Record<LocationId, [number, number]> = { home: [70, 150], shore: [150, 95], wreck: [255, 165], beacon: [360, 70] };
-    const reach = [120, 215, 330, 330][s.stage] ?? 330;
-    const dots = LOCATION_IDS.filter((l) => l !== "home")
-      .map((l) => {
-        const [x, y] = pos[l];
-        const seen = LOCATIONS[l].revealedAtStage <= s.stage;
-        const here = l === s.location ? " here" : "";
-        return `<g class="${seen ? "seen" : "fog"}${here}"><circle cx="${x}" cy="${y}" r="${seen ? 9 : 6}"/><text x="${x}" y="${y - 15}">${seen ? LOCATIONS[l].name : "?"}</text></g>`;
-      })
-      .join("");
-    const svg = `<svg class="chart-svg" viewBox="0 0 420 220">
-      <defs><radialGradient id="lit"><stop offset="0" stop-color="#ffe7b0" stop-opacity="0.28"/><stop offset="1" stop-color="#ffe7b0" stop-opacity="0"/></radialGradient></defs>
-      <rect width="420" height="220" class="sea"/>
-      <circle cx="70" cy="150" r="${reach}" fill="url(#lit)"/>
-      <circle cx="70" cy="150" r="7" class="home"/><text x="70" y="178" class="home-label">Lantern's Rest</text>
-      ${dots}</svg>`;
+    const svg = chartSvg({
+      stage: s.stage,
+      here: s.location,
+      revealed: (l) => LOCATIONS[l].revealedAtStage <= s.stage,
+      open: (l) => l === "home" || l === "shore" || offshore,
+      beaconLit: s.flags.includes("chapter1_complete"),
+    });
     const rows = LOCATION_IDS.filter((l) => l !== s.location)
       .map((l) => {
         const d = LOCATIONS[l];
@@ -300,6 +303,7 @@ export class Menus {
         <label class="check"><input type="checkbox" data-set="screenShake" ${st.screenShake ? "checked" : ""}> Screen shake</label>
         <label class="check"><input type="checkbox" data-set="headBob" ${st.headBob ? "checked" : ""}> Head bob</label>
         <h3>Look</h3>
+        <label>Resolution <select data-set="renderScale">${RENDER_SCALES.map(([v, name]) => `<option value="${v}" ${st.renderScale === v ? "selected" : ""}>${name}</option>`).join("")}</select></label>
         <label class="check"><input type="checkbox" data-set="bloom" ${st.bloom ? "checked" : ""}> Bloom <small>glow round lamps and bright light</small></label>
         <label class="check"><input type="checkbox" data-set="rain" ${st.rain ? "checked" : ""}> Rain</label>
         <h3>Accessibility</h3>

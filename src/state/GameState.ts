@@ -13,6 +13,8 @@ export interface Settings {
   headBob: boolean;
   /** Glow round lamps, the beam and anything burning brighter than white. */
   bloom: boolean;
+  /** Share of the screen's pixels drawn, 0.5..1; 0 = automatic (drops when frames run slow). */
+  renderScale: number;
   rain: boolean;
   /** One switch for everything that moves the view on its own: shake, bob, dash kick, sway, flashes. */
   reducedMotion: boolean;
@@ -68,6 +70,7 @@ export function createNewGame(): GameState {
       screenShake: true,
       headBob: true,
       bloom: true,
+      renderScale: 0,
       rain: true,
       reducedMotion: false,
       contrastShots: false,

@@ -234,38 +234,222 @@
   color: var(--lamp);
 }
 .chart-svg {
+  display: block;
   width: 100%;
   height: auto;
   border-radius: 5px;
   margin-bottom: 12px;
-}
-.chart-svg .sea {
-  fill: #0b2a3c;
-}
-.chart-svg .home {
-  fill: var(--amber);
+  box-shadow: inset 0 0 0 1px rgba(255, 210, 150, 0.18);
 }
 .chart-svg text {
   fill: var(--ink);
   font-family: var(--serif);
-  font-size: 13px;
   text-anchor: middle;
 }
-.chart-svg .home-label {
+.chart-svg .rhumb {
+  stroke: rgba(255, 231, 176, 0.07);
+  stroke-width: 0.6;
+}
+.chart-svg .drowned {
+  fill: none;
+  stroke: rgba(150, 196, 206, 0.24);
+  stroke-width: 0.9;
+}
+.chart-svg .drowned rect,
+.chart-svg .drowned circle {
+  fill: rgba(150, 196, 206, 0.2);
+  stroke: none;
+}
+/* Depth bands: a contour line, then shoal water, then the shallows, under the land. */
+.chart-svg .shoal-edge,
+.chart-svg .shoal,
+.chart-svg .shallows {
+  fill: none;
+  stroke-linejoin: round;
+}
+.chart-svg .shoal-edge {
+  stroke: rgba(207, 232, 226, 0.22);
+  stroke-width: 30;
+}
+.chart-svg .shoal {
+  stroke: #0f3a50;
+  stroke-width: 28.6;
+}
+.chart-svg .shallows {
+  stroke: #175069;
+  stroke-width: 12;
+}
+.chart-svg .small .shoal-edge {
+  stroke-width: 11;
+}
+.chart-svg .small .shoal {
+  stroke-width: 10;
+}
+.chart-svg .small .shallows {
+  stroke-width: 4.5;
+}
+.chart-svg .land {
+  fill: #25332a;
+}
+/* The coast inked in, with a band of tint just inside it. */
+.chart-svg .coast {
+  fill: none;
+  stroke: #b8a678;
+  stroke-width: 1;
+  filter: drop-shadow(0 0 2px rgba(184, 166, 120, 0.35));
+}
+.chart-svg .sandbar {
+  fill: none;
+  stroke: #b8a678;
+  stroke-width: 2.2;
+  stroke-dasharray: 1.5 2.5;
+  stroke-linecap: round;
+  opacity: 0.7;
+}
+.chart-svg .rocks {
+  stroke: #cfe8e2;
+  stroke-width: 0.9;
+  opacity: 0.5;
+}
+.chart-svg .sound text {
+  fill: rgba(207, 232, 226, 0.42);
+  font-size: 8px;
+  font-style: italic;
+}
+.chart-svg .route {
+  fill: none;
+  stroke: rgba(255, 231, 176, 0.6);
+  stroke-width: 1.2;
+  stroke-dasharray: 4 3;
+}
+.chart-svg .route.closed {
+  opacity: 0.35;
+}
+.chart-svg .route.foot {
+  stroke-dasharray: 0.5 3.2;
+  stroke-linecap: round;
+  stroke-width: 1.8;
+}
+.chart-svg .beam {
+  transform-box: view-box;
+  animation: chart-sweep 14s linear infinite;
+}
+@keyframes chart-sweep {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.chart-svg .fog {
+  fill: #16232b;
+  opacity: 0.86;
+}
+.chart-svg .light path,
+.chart-svg .light rect {
+  fill: #3a464e;
+  stroke: #8d9aa2;
+  stroke-width: 0.6;
+}
+.chart-svg .light.lit path,
+.chart-svg .light.lit rect {
+  fill: var(--amber);
+  stroke: var(--lamp);
+}
+.chart-svg .light.dead {
+  opacity: 0.55;
+}
+.chart-svg .glow {
+  fill: #ffb347;
+  opacity: 0.28;
+  filter: blur(3px);
+}
+.chart-svg .place {
+  fill: #cfe8e2;
+  stroke: #0b2a3c;
+  stroke-width: 1;
+}
+.chart-svg .ship path {
+  fill: #cfe8e2;
+  stroke: #0b2a3c;
+  stroke-width: 0.8;
+}
+.chart-svg .ship .spar {
+  fill: none;
+  stroke: #cfe8e2;
+  stroke-width: 1.1;
+}
+.chart-svg .here {
+  fill: none;
+  stroke: var(--amber);
+  stroke-width: 1.6;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: chart-here 1.8s ease-out infinite;
+}
+@keyframes chart-here {
+  from {
+    transform: scale(0.8);
+    opacity: 1;
+  }
+  to {
+    transform: scale(2.1);
+    opacity: 0;
+  }
+}
+.chart-svg .label {
+  font-size: 12px;
+  paint-order: stroke;
+  stroke: rgba(7, 27, 40, 0.85);
+  stroke-width: 3px;
+}
+.chart-svg .label.home {
   fill: var(--amber);
 }
-.chart-svg .seen circle {
-  fill: #cfe8e2;
+.chart-svg .label.unknown {
+  fill: #7d8d95;
+  font-size: 13px;
+  stroke: none;
 }
-.chart-svg .here circle {
-  stroke: var(--amber);
-  stroke-width: 3;
+.chart-svg .tiny {
+  fill: #8a979e;
+  font-size: 8px;
+  font-style: italic;
 }
-.chart-svg .fog circle {
-  fill: #31424c;
+.chart-svg .title {
+  fill: var(--lamp);
+  font-size: 17px;
+  text-anchor: start;
+  letter-spacing: 0.4px;
 }
-.chart-svg .fog text {
-  fill: #6c7c84;
+.chart-svg .subtitle {
+  fill: var(--ink-dim);
+  font-size: 9.5px;
+  font-style: italic;
+  text-anchor: start;
+}
+.chart-svg .scale path {
+  fill: none;
+  stroke: #b8a678;
+  stroke-width: 0.9;
+}
+.chart-svg .scale text {
+  fill: #b8a678;
+  font-size: 8px;
+  font-style: italic;
+}
+.chart-svg .rose circle {
+  fill: none;
+  stroke: rgba(205, 187, 142, 0.5);
+  stroke-width: 0.7;
+}
+.chart-svg .rose .face {
+  fill: #d8c79a;
+}
+.chart-svg .rose .shade {
+  fill: #6e6346;
+}
+.chart-svg .rose text {
+  fill: var(--lamp);
+  font-size: 10px;
 }
 .dest li {
   display: flex;
@@ -352,6 +536,20 @@
 .settings input[type="range"] {
   accent-color: var(--amber);
 }
+.settings select {
+  grid-column: span 2;
+  justify-self: start;
+  font: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  padding: 5px 8px;
+}
+.settings select option {
+  background: #10181d;
+}
 .settings output {
   color: var(--ink-dim);
   font-size: 13px;
@@ -407,4 +605,19 @@
   .binds {
     grid-template-columns: 1fr;
   }
+}
+
+/* Journal → Lighthouse: what the chapter is for. */
+.chapter {
+  margin: 4px 0 6px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+.creed {
+  margin: 0 0 14px;
+  font-family: var(--serif);
+  font-size: 15px;
+  font-style: italic;
+  color: var(--ink-dim);
 }

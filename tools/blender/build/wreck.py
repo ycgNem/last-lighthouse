@@ -1205,6 +1205,11 @@ for k in range(9):
     h = 0.25 + vr.random() * 0.75
     rig.box((0.1, h, 0.16), at=(FORE_X + math.cos(a) * 0.27, FORE_TOP - 0.05, ZC - math.sin(a) * 0.27), mat=SPAR, yaw=a, roll=(vr.random() - 0.5) * 0.3, tint=1.1, bev=0.01)
 shrouds(FORE_X, FORE_TOP - 0.4, 0.42, SHROUD_FEET, FORE_TOP - 1.2, loose=2)
+# Gulls: on the snapped foremast, the main top and the capstan; the flock wheels over the main mast.
+kit.empty("FX_perch_foremast", (FORE_X, FORE_TOP + 0.4, ZC))
+kit.empty("FX_perch_maintop", (MAIN_X + 0.55, DECK + 13.2, ZC))
+kit.empty("FX_perch_capstan", (11.0, DECK + 1.5, ZC + 0.25))
+kit.empty("FX_gulls", (MAIN_X, 0.0, ZC))
 # Mizzen: a stump where it broke, before it fell over the side.
 MIZ_TOP = DECK + 1.75
 rig.cyl(0.44, 0.42, MIZ_TOP - DECK, at=(MIZZEN_X, DECK, ZC), mat=SPAR, segs=12)

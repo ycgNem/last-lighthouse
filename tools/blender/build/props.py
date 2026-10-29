@@ -774,9 +774,75 @@ def cask_small():
     m.build("PROP_cask_small", loc=place())
 
 
+def gull():
+    """Herring gulls. PROP_gull stands (feet at the origin, facing +Z). In flight
+    the game assembles PROP_gull_body (origin between the shoulders) and the two
+    wings, PROP_gull_wing_l along +X and PROP_gull_wing_r along -X, each with its
+    origin at the shoulder so it can flap about the body's long axis."""
+    F = P["cloth"].mat
+    WHITE, GREY, BLACK = Paint(F, 0xF0EEE6), Paint(F, 0x98A2A9), Paint(F, 0x222428)
+    BILL, LEGS, EYE, SPOT = Paint(F, 0xE3B53C), Paint(F, 0xD49A88), Paint(F, 0x111214), Paint(F, 0xC0392B)
+
+    def head(m, at):
+        x, y, z = at
+        m.sphere(0.062, at=(x, y, z), mat=WHITE, scale=(0.9, 0.95, 1.1), subdiv=2, jit=0.02)
+        m.cyl(0.016, 0.006, 0.075, at=(x, y - 0.008, z + 0.085), mat=BILL, segs=6, pitch=math.pi / 2, centered=True, jit=0.02)
+        m.sphere(0.008, at=(x, y - 0.019, z + 0.1), mat=SPOT, subdiv=1, jit=0.0)
+        for sx in (-1, 1):
+            m.sphere(0.009, at=(x + sx * 0.047, y + 0.014, z + 0.03), mat=EYE, subdiv=1, jit=0.0)
+
+    # Standing: pink legs and webbed feet, chest up, folded grey wings crossing
+    # over the tail in black, white-spotted tips.
+    m = MB(90)
+    for sx in (-1, 1):
+        m.tube([(sx * 0.035, 0.0, 0.015), (sx * 0.037, 0.07, 0.005), (sx * 0.04, 0.14, -0.005)], 0.009, mat=LEGS, segs=4)
+        m.box((0.05, 0.008, 0.065), at=(sx * 0.035, 0.0, 0.035), mat=LEGS, bev=0)
+    m.sphere(0.1, at=(0, 0.2, 0), mat=WHITE, scale=(0.9, 0.85, 1.55), subdiv=2, pitch=0.25, jit=0.02)
+    m.sphere(0.058, at=(0, 0.29, 0.1), mat=WHITE, scale=(1.0, 1.4, 1.0), subdiv=1, jit=0.02)
+    head(m, (0, 0.36, 0.14))
+    for sx in (-1, 1):
+        m.sphere(0.1, at=(sx * 0.058, 0.23, -0.05), mat=GREY, scale=(0.48, 0.42, 1.75), subdiv=2, roll=sx * 0.22, pitch=0.12, jit=0.03)
+        m.sphere(0.06, at=(sx * 0.018, 0.19, -0.23), mat=BLACK, scale=(0.55, 0.3, 1.6), subdiv=1, pitch=0.15, jit=0.02)
+        m.sphere(0.012, at=(sx * 0.03, 0.188, -0.29), mat=WHITE, subdiv=1, jit=0.0)
+    m.sphere(0.05, at=(0, 0.17, -0.16), mat=WHITE, scale=(0.9, 0.45, 1.3), subdiv=1, jit=0.02)
+    m.build("PROP_gull", loc=place(), ao=0.3, grime=0.0)
+
+    # In flight: a long white body, head out front, the tail a fan.
+    m = MB(91)
+    m.sphere(0.095, at=(0, 0, -0.02), mat=WHITE, scale=(0.85, 0.8, 1.75), subdiv=2, jit=0.02)
+    m.sphere(0.05, at=(0, 0.02, 0.14), mat=WHITE, scale=(1.0, 1.0, 1.3), subdiv=1, jit=0.02)
+    head(m, (0, 0.035, 0.2))
+    m.sphere(0.06, at=(0, 0.0, -0.21), mat=WHITE, scale=(1.05, 0.22, 1.4), subdiv=1, jit=0.02)
+    m.sphere(0.02, at=(0, -0.06, -0.08), mat=LEGS, scale=(1.4, 0.6, 1.8), subdiv=1, jit=0.0)
+    m.build("PROP_gull_body", loc=place(), ground=False, ao=0.25, grime=0.0)
+
+    # Wings: (out from the shoulder, leading edge z, trailing edge z, thickness,
+    # lift). The arm rises and the hand droops, the gull's M when it glides.
+    span = [
+        (0.0, 0.07, -0.12, 0.035, 0.0),
+        (0.16, 0.08, -0.13, 0.028, 0.025),
+        (0.31, 0.075, -0.125, 0.022, 0.035),
+        (0.45, 0.035, -0.145, 0.016, 0.02),
+        (0.57, -0.03, -0.15, 0.01, -0.005),
+        (0.66, -0.1, -0.13, 0.004, -0.02),
+    ]
+    for sign, name, seed in ((1, "PROP_gull_wing_l", 92), (-1, "PROP_gull_wing_r", 93)):
+        sec = []
+        for x, zl, zt, t, y in span:
+            zm = zl * 0.65 + zt * 0.35
+            sec.append([(sign * x, y, zl), (sign * x, y + t / 2, zm), (sign * x, y, zt), (sign * x, y - t / 2, zm)])
+        m = MB(seed)
+        # Grey above, white beneath; the hand black on both faces.
+        m.loft(sec[:4], closed=True, cap=True, flip=sign < 0, strips=[(GREY, 1.0), (GREY, 1.0), (WHITE, 1.0), (WHITE, 1.0)])
+        m.loft(sec[3:], closed=True, cap=True, flip=sign < 0, strips=[(BLACK, 1.0)])
+        tx, ty, tz = sec[4][1]
+        m.sphere(0.016, at=(tx, ty + 0.002, tz - 0.012), mat=WHITE, scale=(1.3, 0.3, 1.0), subdiv=1, jit=0.0)
+        m.build(name, loc=place(), ground=False, ao=0.2, grime=0.0)
+
+
 for build in (driftwood, scrap_pile, kelp_bed, glass_bed, reinforced_wreckage, supply_crate, sealed_cache, strongbox, lens_pedestal,
               tide_pole, buoy_crate, rope_ladder, beacon_lamp, rowboat, signpost, barrel, hull_ribs, lantern_post, dune_grass,
-              bollard, rope_coil, anchor, plank_pile, lantern_hanging, seaweed, lobster_pot, cask_small):
+              bollard, rope_coil, anchor, plank_pile, lantern_hanging, seaweed, lobster_pot, cask_small, gull):
     build()
 
 kit.save_and_export("art/blender/props/props.blend", "public/assets/models/props.glb")

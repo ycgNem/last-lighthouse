@@ -4,7 +4,7 @@ All 3D art is made in **Blender** (4.x/5.x) and exported as **glTF binary (.glb)
 Sources live in `art/blender/`, exports in `public/assets/models/`.
 
 ```
-tools/blender/build/   props.py  enemies.py  viewmodels.py  home.py  shore.py  wreck.py  beacon.py
+tools/blender/build/   props.py  enemies.py  viewmodels.py  home.py  scenery.py  shore.py  wreck.py  beacon.py
 tools/blender/lib/     kit.py (shared helpers: B(), Paint, mesh builder, terrain, export)
 tools/blender/         review.py (render sheets to check by eye)  preview.py  export_gltf.py
 art/blender/
@@ -12,9 +12,10 @@ art/blender/
   enemies/enemies.blend          every MODEL_<enemy id>
   viewmodels/viewmodels.blend    VM_boltcaster_mk1/mk2, VM_lamplighter, VM_lantern, VM_rod_*, VM_bobber
   home/home.blend                every HOME_<name>: Lantern's Rest's buildings and dressing
+  scenery/scenery.blend          every SCENE_<piece>: the drowned world on the horizon
   locations/shore.blend  wreck.blend  beacon.blend
 public/assets/models/
-  props.glb  enemies.glb  viewmodels.glb  home.glb   loaded once at boot, cloned by name
+  props.glb  enemies.glb  viewmodels.glb  home.glb  scenery.glb   loaded once at boot, cloned by name
   locations/<id>.glb                                  loaded when you travel there
 ```
 
@@ -24,7 +25,24 @@ so much of it changes with progression, but what you see there is modelled:
 the code already uses, and the code sets it in place. Children it looks for by
 name: `window_*` (lit one by one as the stage rises), `mouth` (the forge's
 firebox), `coals` (the hearth), `smoke` (where chimney smoke starts) and `COL_*`
-(extra collision: benches, barrels, the anvil).
+(extra collision: benches, barrels, the anvil). The village's dressing (field
+walls, kitchen garden, well, washing line, net frame, Tib's boat on trestles, the
+memorial, gorse) is placed from `FIELD_WALLS`, `DRESSING` and `ODDMENTS` in
+`HomeLevel.ts`; a `HOME_wall_run` is 4 m long, stretched a little so runs meet.
+
+The drowned world on every horizon (`scenery.py`) is a set of `SCENE_<piece>`
+models, each standing on the low-water line with its foot in the sea: a row of
+roofs, a church spire, telegraph poles walking out to sea, sea stacks, a dead
+lighthouse, a wreck's masts, a windmill, a headland, a buoy.
+`src/data/scenery.ts` places them per location, 90–170 m out, inside the fog and
+out of line with the home beam; `src/world/Horizon.ts` merges them into one batch
+without shadows.
+
+Gulls come from props.glb in four parts: `PROP_gull` stands (feet at the origin),
+and a flier is `PROP_gull_body` (origin between the shoulders) plus
+`PROP_gull_wing_l` (along +X) and `PROP_gull_wing_r` (along −X), each with its
+origin at the shoulder so `src/world/Gulls.ts` can flap it about the body's long
+axis. Every part is one instanced mesh in the game.
 
 The people at home are free characters from [Polyfork](https://polyfork.dev),
 loaded from Polyfork's CDN at run time (`src/data/villagers.ts`). Their licence
@@ -97,7 +115,7 @@ you can reach can't lead back to the landing at low *and* high tide (in every
 | `BUOY_*` + props `float`, `min`, `max` | mesh | Floats: origin at water + `float`, clamped to `min..max`. Its bounding box is something you can stand on |
 | `TRIG_*` + prop `event` | mesh | Hidden volume; entering fires `event` (`boss`, or `toast:<text>` for a one-time hint) |
 | `STATE_<flag>_<on\|off>` | any | Shown only when the flag is set (`on`) or unset (`off`); collision follows. E.g. `STATE_guardian_defeated_off` rubble |
-| `FX_<name>` | empty | A named point: `home_light` (beam on the horizon), `arena`, `beacon_lamp`, `ambush_<enemy id>_<n>` (spawned when you take the lens) |
+| `FX_<name>` | empty | A named point: `home_light` (beam on the horizon), `arena`, `beacon_lamp`, `ambush_<enemy id>_<n>` (spawned when you take the lens), `perch_<name>` (a gull stands on whatever is drawn just below it; it leaves when you come within 7 m or the tide reaches its feet), `gulls` (the centre the flock wheels round; default, the middle of the gathering spots) |
 | `GLOOM_*` + prop `radius` | empty | A Gloom pocket centred here, on the ground, spreading `radius` metres round it (between 1 and 6). Keep it clear of anchors and the landing; the count per level is in `locations.ts` |
 | prop `light: "warm"` (+ `light_offset`) | any | Adds a warm point light (lantern posts, braziers) |
 | material `TIDE_*` | material | Glows with the flood warning between the water and the high-tide line |
@@ -106,6 +124,7 @@ you can reach can't lead back to the landing at low *and* high tide (in every
 | `MODEL_<enemy id>` | enemies.blend | Cloned per enemy; named parts are animated in code (`arm_l`, `arm_r`, `heart`, `claw_*`, …) |
 | `VM_*` | viewmodels.blend | First-person models; a rod's `tip` empty anchors the fishing line |
 | `HOME_*` | home.blend | Home's buildings and dressing, placed by `HomeLevel.ts` |
+| `SCENE_*` | scenery.blend | Horizon set pieces, placed by `src/data/scenery.ts` |
 
 Custom properties are Object Properties → Custom Properties; they arrive in Three
 as `object.userData`.

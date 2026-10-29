@@ -1,3 +1,6 @@
+import { Horizon } from "../world/Horizon";
+import { PROLOGUE, PROLOGUE_CARD_SECONDS } from "../data/story";
+import { sourcesOf, stillNeeded } from "../systems/guide";
 import * as THREE from "three";
 import { Sfx } from "../audio/Sfx";
 import { Projectiles } from "../combat/Projectiles";
@@ -33,12 +36,14 @@ import { addItem, applyDeathLoss, available, carried, depositAll, removeAvailabl
 import { advanceStage, completeProject, isMet, maxHp, missingFor } from "../systems/progression";
 import { advanceQuest, currentStep, stepMaterials } from "../systems/quests";
 import { addXp, skillLevel } from "../systems/skills";
+import { AutoResolution } from "../systems/resolution";
 import { readTide, tideEvents, type TideReading } from "../systems/tide";
 import { Hud, type CompassMarker, type HudView, type KeyLabels } from "../ui/Hud";
 import { Menus, type MenuKind } from "../ui/Menus";
 import { HomeLevel } from "../world/home/HomeLevel";
 import type { Level, LevelInteract } from "../world/Level";
 import { GloomPocket } from "../world/Gloom";
+import { Gulls } from "../world/Gulls";
 import { LevelHeights } from "../world/Heights";
 import { GlbLevel, loadLevel } from "../world/LevelLoader";
 import { BeamRig, DistantLight, stageLook } from "../world/Lighthouse";
@@ -140,6 +145,13 @@ export class Game implements GameContext {
   private resetting = false;
   private transition: Transition | null = null;
   private trip: Trip | null = null;
+  /** The drowned world on this location's horizon. */
+  private horizon: Horizon | null = null;
+  private gulls: Gulls | null = null;
+  /** The prologue, while it's up: which card, and for how long. */
+  private story: { i: number; t: number; shown: number } | null = null;
+  /** The step whose materials we last announced as all in hand. */
+  private readyTold: string | null = null;
   private pendingSummary: MenuKind | null = null;
   private flagsKey = "";
 
@@ -167,6 +179,9 @@ export class Game implements GameContext {
   private gloomT = 0;
   private gloomVeil = 0;
   private swimVeil = 0;
+  /** Auto resolution: the share of pixels drawn, moved by the frame times (src/systems/resolution.ts). */
+  private readonly autoRes = new AutoResolution();
+  private renderScale = 1;
 
   constructor(container: HTMLElement, hudRoot: HTMLElement) {
     const saved = this.saves.load();
@@ -175,7 +190,7 @@ export class Game implements GameContext {
     if (!saved && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) this.state.settings.reducedMotion = true;
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2) * (this.state.settings.renderScale || 1));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -256,7 +271,7 @@ export class Game implements GameContext {
 
     this.loop = new Loop(
       (dt) => this.update(dt),
-      (_alpha, frameDt) => this.render(frameDt),
+      (frameDt) => this.render(frameDt),
     );
   }
 
@@ -287,6 +302,8 @@ export class Game implements GameContext {
     this.sfx.resume();
     this.sfx.setAmbience(this.state.location);
     this.setMode("playing");
+    // A new keeper hears how the world got this way before taking a step.
+    if (this.state.playSeconds === 0 && this.state.quest.step === 0 && !this.story) this.story = { i: 0, t: 0, shown: -1 };
     const locked = await this.input.requestLock();
     // The player may have opened a menu or paused while the browser decided.
     if ((this.mode as Mode) !== "playing") return;
@@ -353,7 +370,7 @@ export class Game implements GameContext {
         if (this.input.pressed("pause")) {
           if (this.hud.dialogueOpen) this.closeDialogue();
           else this.pause();
-        } else if (this.input.pressed("journal") && !this.relight) this.openMenu({ kind: "journal" });
+        } else if (this.input.pressed("journal") && !this.relight && !this.story) this.openMenu({ kind: "journal" });
         else this.updatePlaying(dt);
         break;
       case "menu":
@@ -369,6 +386,7 @@ export class Game implements GameContext {
     const warn = this.tide.phase === "rising" ? 1 : this.tide.warning && this.tide.nextTurn === "rising" ? 0.7 : 0;
     this.floodWarn = THREE.MathUtils.damp(this.floodWarn, warn, 2, dt);
     this.level.update({ time: this.time, dt, waterY: this.tide.waterY, floodWarning: this.floodWarn, viewer: this.player.position });
+    this.gulls?.update(dt, this.player.position, this.tide.waterY);
     this.distant?.rig.update(dt);
     this.beacon?.update(dt);
     this.effects.update(dt);
@@ -379,6 +397,10 @@ export class Game implements GameContext {
   }
 
   private updatePlaying(dt: number): void {
+    if (this.story) {
+      this.updateStory(dt);
+      return;
+    }
     const s = this.state;
     s.playSeconds += dt;
     s.tide.elapsed += dt;
@@ -999,6 +1021,11 @@ export class Game implements GameContext {
     this.level = level;
     this.state.location = level.id;
     this.scene.add(level.root);
+    this.horizon = new Horizon(this.assets, level.id);
+    this.scene.add(this.horizon.root);
+    this.gulls = new Gulls(this.assets, level, level.collider);
+    this.gulls.onCall = (at, alarm) => this.sfx.gull(at, alarm);
+    this.scene.add(this.gulls.root);
     this.flagsKey = "";
     this.refreshWorld();
     this.heights = new LevelHeights(level.collider);
@@ -1031,7 +1058,7 @@ export class Game implements GameContext {
       this.distant = new DistantLight(homeLight, STAGES[this.state.stage]!.visuals);
       this.scene.add(this.distant.rig.pivot);
     }
-    if (this.state.flags.includes("chapter1_complete")) this.lightBeacon(false);
+    this.placeBeacon(this.state.flags.includes("chapter1_complete"));
 
     if (level === this.home) {
       this.player.hp = this.maxHpNow();
@@ -1039,10 +1066,13 @@ export class Game implements GameContext {
       if (t && via !== "defeat" && (t.gained.size || t.kills || Object.keys(t.xp).length)) {
         const gained = [...t.gained].map(([item, qty]) => ({ item, qty }));
         const unbanked = this.state.satchel.some((st) => st && ITEMS[st.item].category !== "food");
+        const step = currentStep(this.state);
+        const ready = step && stepMaterials(this.state).length > 0 && stillNeeded(this.state).length === 0 ? step.title : null;
+        const bank = unbanked ? "Put your haul in the storage chest to keep it safe." : "The light is still burning.";
         this.pendingSummary = {
           kind: "summary",
           title: "Home again",
-          sub: unbanked ? "Put your haul in the storage chest to keep it safe." : "The light is still burning.",
+          sub: ready ? `You have everything for ${ready}. ${bank}` : bank,
           gained,
           lost: [],
           xp: t.xp,
@@ -1055,6 +1085,27 @@ export class Game implements GameContext {
     if (this.everStarted) this.sfx.setAmbience(level.id);
     this.bus.emit("travel:arrived", { location: level.id });
     this.save();
+    await this.prewarm();
+  }
+
+  /**
+   * Compiles every shader the place can show while the travel card is still up.
+   * Otherwise each new material, and every lit material whenever the number of
+   * lights changes, compiles the first time it's drawn: a long frame mid-play.
+   */
+  private async prewarm(): Promise<void> {
+    this.camera.position.copy(this.player.eye);
+    const extras = new THREE.Group();
+    extras.add(...this.projectiles.samples(), ...this.loot.samples(), ...this.effects.samples());
+    this.scene.add(extras);
+    try {
+      await this.renderer.compileAsync(this.scene, this.camera);
+      if (this.viewmodel) await this.renderer.compileAsync(this.viewmodel.scene, this.viewmodel.camera);
+    } catch (err: unknown) {
+      console.warn("[prewarm] shaders will compile on first use instead.", err);
+    } finally {
+      extras.removeFromParent();
+    }
   }
 
   private unloadLevel(): void {
@@ -1074,6 +1125,10 @@ export class Game implements GameContext {
     this.distant = null;
     this.beacon?.pivot.removeFromParent();
     this.beacon = null;
+    this.horizon?.dispose();
+    this.horizon = null;
+    this.gulls?.dispose();
+    this.gulls = null;
     this.water.setHeights(null);
     this.rain.setHeights(null);
     this.heights?.dispose();
@@ -1200,7 +1255,7 @@ export class Game implements GameContext {
     }
     if (!this.state.flags.includes("chapter1_complete")) this.state.flags.push("chapter1_complete");
     this.relight = { t: 0 };
-    this.lightBeacon(true);
+    this.lightBeacon();
     this.sfx.upgrade();
     this.sfx.horn();
     this.addShake(0.4);
@@ -1208,17 +1263,27 @@ export class Game implements GameContext {
     this.afterAction();
   }
 
-  private lightBeacon(fresh: boolean): void {
+  /**
+   * The outlying beacon's lamp and beam go in when you arrive, dark until it's
+   * relit: adding their lights at the relight would make every material in view
+   * recompile at the very moment the beam fires.
+   */
+  private placeBeacon(lit: boolean): void {
     const at = this.level.points.get("beacon_lamp");
-    if (!at || this.beacon) return;
+    if (!at) return;
     this.beacon = new BeamRig({ lights: true, lampRadius: 1.2 });
     this.beacon.pivot.position.copy(at);
-    this.beacon.setLook(stageLook(STAGES[3]!.visuals));
+    const look = stageLook(STAGES[3]!.visuals);
+    this.beacon.setLook(lit ? look : { ...look, intensity: 0 });
     this.scene.add(this.beacon.pivot);
-    if (fresh) {
-      this.effects.burst(at, FX_COLORS.amber, 140);
-      this.effects.ring(at.clone(), FX_COLORS.amber, 0.5, 14, 1.4, 0.8);
-    }
+  }
+
+  private lightBeacon(): void {
+    const at = this.level.points.get("beacon_lamp");
+    if (!at || !this.beacon) return;
+    this.beacon.setLook(stageLook(STAGES[3]!.visuals));
+    this.effects.burst(at, FX_COLORS.amber, 140);
+    this.effects.ring(at.clone(), FX_COLORS.amber, 0.5, 14, 1.4, 0.8);
   }
 
   private updateRelight(dt: number): void {
@@ -1249,6 +1314,7 @@ export class Game implements GameContext {
       if (from) this.loot.burst(from, fit);
       this.sfx.pickup();
       this.bus.emit("items:gained", { stacks: [{ item, qty: fit }] });
+      this.checkReady();
     }
     if (fit < qty) this.hud.toast(`Satchel full: ${qty - fit} ${def.name} left behind`, "warn");
     return fit;
@@ -1352,6 +1418,7 @@ export class Game implements GameContext {
   // ------------------------------------------------------------ render
 
   private render(frameDt: number): void {
+    this.adaptResolution(frameDt);
     const p = this.player;
     const st = this.state.settings;
     const calm = st.reducedMotion;
@@ -1369,7 +1436,8 @@ export class Game implements GameContext {
         jy = (Math.random() - 0.5) * k;
       }
     }
-    this.camera.rotation.set(p.pitch + jx, p.yaw + jy, 0);
+    // A dash widens the view and leans a touch into a sideways one.
+    this.camera.rotation.set(p.pitch + jx, p.yaw + jy, calm ? 0 : -p.dashSide * 0.035);
     this.camera.fov = st.fov + (calm ? 0 : p.dashKick * 6);
     this.camera.updateProjectionMatrix();
 
@@ -1446,7 +1514,10 @@ export class Game implements GameContext {
     return {
       tide: this.tide,
       objective: step ? { title: step.title, hint: step.hint } : null,
-      checklist: stepMaterials(s).map((x) => ({ ...x, have: available(s, x.item) })),
+      checklist: stepMaterials(s).map((x) => {
+        const have = available(s, x.item);
+        return have < x.qty ? { ...x, have, where: this.whereToFind(x.item) } : { ...x, have };
+      }),
       hp: p.hp,
       maxHp: p.maxHp,
       dashCharges: p.dashCharges,
@@ -1520,7 +1591,9 @@ export class Game implements GameContext {
         if (here === "beacon") return s.flags.includes("guardian_defeated") ? pt(find("beacon"), "Beacon") : pt(this.level.points.get("arena"), "Beacon rock");
         return here === "home" ? pt(find("boat"), "Boat") : null;
       }
-      if (here !== "home" || !isMet(missingFor(s, req))) return null;
+      const met = isMet(missingFor(s, req));
+      if (here !== "home") return met ? this.wayHome() : (this.nearestSource() ?? this.wayHome());
+      if (!met) return this.wayOut();
       if (g.kind === "project") return pt(find(g.project === "dock" ? "boat" : g.project), PROJECTS[g.project].name);
       return pt(find("lamp"), "Lighthouse");
     }
@@ -1534,10 +1607,113 @@ export class Game implements GameContext {
     return null;
   }
 
+  /** Out on a trip: the nearest node that still gives something the step needs. */
+  private nearestSource(): { at: THREE.Vector3; label: string } | null {
+    const want = new Set(stillNeeded(this.state).map((s) => s.item));
+    if (!want.size) return null;
+    let best: GatherNode | null = null;
+    let bestD = Infinity;
+    for (const n of this.nodes) {
+      if (!n.obtainable(this) || !n.def.yields.some((y) => want.has(y.item))) continue;
+      const d = n.position.distanceToSquared(this.player.position);
+      if (d < bestD) {
+        bestD = d;
+        best = n;
+      }
+    }
+    return best ? { at: best.position, label: best.def.name } : null;
+  }
+
+  /** The way back from a trip: the boat, or the cliff path. */
+  private wayHome(): { at: THREE.Vector3; label: string } | null {
+    const at = (id: string) => {
+      const it = this.level.interacts.find((i) => i.id === id);
+      return it && shown(it.object) ? it.object.getWorldPosition(new THREE.Vector3()) : undefined;
+    };
+    const boat = at("boat");
+    if (boat) return { at: boat, label: "Home" };
+    const path = at("path_home");
+    return path ? { at: path, label: "Home" } : null;
+  }
+
+  /** At home with materials still to find: the way out toward the nearest place that has them. */
+  private wayOut(): { at: THREE.Vector3; label: string } | null {
+    const missing = stillNeeded(this.state)[0];
+    const to = missing ? sourcesOf(this.state, missing.item).find((l) => l !== "home") : undefined;
+    if (!to) return null;
+    const id = to === "shore" ? "path_shore" : "boat";
+    const it = this.level.interacts.find((i) => i.id === id);
+    return it && shown(it.object) ? { at: it.object.getWorldPosition(new THREE.Vector3()), label: LOCATIONS[to].name } : null;
+  }
+
+  /** Where to look for an item the step still needs: "here", or the nearest place that has it. */
+  private whereToFind(item: ItemId): string | undefined {
+    const from = sourcesOf(this.state, item);
+    if (from.includes(this.state.location)) return "here";
+    const to = from[0];
+    return to ? LOCATIONS[to].name : undefined;
+  }
+
+  /** Says so the moment you're carrying everything the current step needs (once per step). */
+  private checkReady(): void {
+    const step = currentStep(this.state);
+    if (!step || this.readyTold === step.id || this.state.location === "home") return;
+    if (!stepMaterials(this.state).length || stillNeeded(this.state).length) return;
+    this.readyTold = step.id;
+    this.hud.toast(`You have everything for ${step.title}. Take it home.`, "milestone", 6);
+  }
+
+  /** The prologue on a new game: one card at a time; a click or a key moves it on. */
+  private updateStory(dt: number): void {
+    const st = this.story!;
+    st.t += dt;
+    this.input.consumeMouse();
+    const i = this.input;
+    const next = st.t > 0.6 && (i.pressed("fire") || i.pressed("jump") || i.pressed("interact") || i.pressed("dash"));
+    if (next || st.t > PROLOGUE_CARD_SECONDS) {
+      st.i++;
+      st.t = 0;
+    }
+    const card = PROLOGUE[st.i];
+    if (!card) {
+      this.story = null;
+      this.hud.story(null);
+      return;
+    }
+    if (st.shown !== st.i) {
+      st.shown = st.i;
+      this.hud.story(card, st.i, PROLOGUE.length);
+    }
+  }
+
   private onResize(): void {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.post.setSize(window.innerWidth, window.innerHeight);
+  }
+
+  /**
+   * Draws fewer pixels when frames run slow and creeps back up when there's
+   * room (Auto), or holds the share the player picked. Only normal play counts:
+   * menus, cards and loading hitches say nothing about the frame rate.
+   */
+  private adaptResolution(frameDt: number): void {
+    const fixed = this.state.settings.renderScale;
+    if (fixed > 0) {
+      this.setRenderScale(fixed);
+      this.autoRes.startFrom(fixed);
+      return;
+    }
+    if (this.mode !== "playing") return;
+    const next = this.autoRes.frame(frameDt);
+    if (next !== null) this.setRenderScale(next);
+  }
+
+  private setRenderScale(scale: number): void {
+    if (Math.abs(scale - this.renderScale) < 1e-3) return;
+    this.renderScale = scale;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2) * scale);
     this.post.setSize(window.innerWidth, window.innerHeight);
   }
 

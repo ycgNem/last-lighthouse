@@ -61,6 +61,72 @@ const LANTERN_POSTS = [
 ] as const;
 /** Dock planks missing until the dock project. */
 const MISSING_PLANKS = [9, 10, 11, 18, 19];
+/** Dry-stone field walls, as runs of HOME_wall_run (4 m each) along these points. Open-ended: you walk round them. */
+const FIELD_WALLS: readonly (readonly (readonly [number, number])[])[] = [
+  // Inside the anchor at (32, 10), so a rescue never lands you in a wall.
+  [
+    [22, 0],
+    [28, 8],
+    [31, 20],
+  ],
+  [
+    [-30, 24],
+    [-20, 32],
+    [-8, 36],
+  ],
+  [
+    [-32, -24],
+    [-20, -34],
+    [-4, -38],
+  ],
+];
+/** The village's life, from home.glb: model, x, z, yaw. Clear of the paths, the square and the doors. */
+const DRESSING: readonly (readonly [string, number, number, number])[] = [
+  ["HOME_garden", 24, 16, -0.6],
+  // Broadside to the square, so the wash shows instead of a post edge-on.
+  ["HOME_washing_line", -22, 18, -0.94],
+  ["HOME_net_frame", 12.5, 40, 0.3],
+  ["HOME_woodpile", 18, 11.5, -0.4],
+  ["HOME_well", -8, 12, 0.2],
+  ["HOME_boat_trestles", -4, 32, 0.4],
+  // Facing the village: for those the sea took.
+  ["HOME_memorial", 8, -34, -0.23],
+  ["HOME_gorse", 34, -18, 0.3],
+  ["HOME_gorse", 30, 30, 1.9],
+  ["HOME_gorse", -36, 20, 4.1],
+  ["HOME_gorse", 16, -32, 2.6],
+  ["HOME_gorse", 40, 2, 0.9],
+  ["HOME_gorse", -38, -10, 5.2],
+  ["HOME_gorse", -14, -30, 3.3],
+  ["HOME_gorse", 20, 34, 1.2],
+];
+/** Odds and ends from props.glb by the forge, the dock and the chest: prop id, x, z, yaw. */
+const ODDMENTS: readonly (readonly [string, number, number, number])[] = [
+  ["barrel", 9.4, 11.6, 0.4],
+  ["barrel", 10.3, 12.4, 1.7],
+  ["lobster_pot", 11.0, 37.4, 0.2],
+  ["lobster_pot", 11.9, 37.0, 1.1],
+  ["rope_coil", 8.3, 43.2, 0.7],
+  ["cask_small", -6.6, -2.4, 2.1],
+  ["plank_pile", -1.2, 30.8, 0.4],
+];
+/** Where gulls sit (x, y, z): src/world/Gulls.ts stands each on whatever is drawn just below. */
+const PERCHES: readonly (readonly [number, number, number])[] = [
+  // Lantern posts.
+  [16, CLIFF_TOP + 2.6, -10],
+  [5, CLIFF_TOP + 2.6, 28],
+  [-38, CLIFF_TOP + 2.6, 5],
+  // The memorial, the field walls, the keel of Tib's boat, the dock.
+  [8, CLIFF_TOP + 2.2, -34],
+  [-25, CLIFF_TOP + 1.2, 28],
+  [-12, CLIFF_TOP + 1.2, -36],
+  [25, CLIFF_TOP + 1.2, 4],
+  [-4, CLIFF_TOP + 1.9, 32],
+  [DOCK_X, DOCK_Y + 0.5, 50],
+  // Two cottage ridges.
+  [-24.9, CLIFF_TOP + 6.2, 10.5],
+  [-15.5, CLIFF_TOP + 6.2, 21.7],
+];
 /** Kept clear of grass tufts: buildings, the square, the dock head. */
 const CLEAR: readonly [number, number, number][] = [
   [22, -20, 6.5],
@@ -70,6 +136,7 @@ const CLEAR: readonly [number, number, number][] = [
   [6, 44, 3],
   [-41, 11, 2],
   ...COTTAGES.map(([x, z]) => [x, z, 4.6] as [number, number, number]),
+  ...DRESSING.filter(([m]) => m !== "HOME_gorse").map(([, x, z]) => [x, z, 3.2] as [number, number, number]),
 ];
 
 const mat = (color: number, extra: THREE.MeshStandardMaterialParameters = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.85, ...extra });
@@ -333,6 +400,10 @@ export class HomeLevel implements Level {
     // Safe anchors on the cliff top for the anti-trap current.
     this.anchors.push(new THREE.Vector3(DOCK_X, DOCK_Y, 45), new THREE.Vector3(-30, CLIFF_TOP, 30), new THREE.Vector3(-35, CLIFF_TOP, -20), new THREE.Vector3(32, CLIFF_TOP, 10));
 
+    // Gulls sit about the village and wheel round the lighthouse.
+    PERCHES.forEach(([x, y, z], i) => this.points.set(`perch_${i}`, new THREE.Vector3(x, y, z)));
+    this.points.set("gulls", new THREE.Vector3(22, 0, -20));
+
     this.collider = this.buildCollider();
   }
 
@@ -457,6 +528,7 @@ export class HomeLevel implements Level {
       this.hide(...this.sign.parts);
       this.sign.group.add(sign);
     }
+    this.dressVillage(assets);
     this.scatterGrass(assets);
     this.loadVillagers();
 
@@ -472,6 +544,36 @@ export class HomeLevel implements Level {
     for (const body of this.npcBodies.values()) live.add(body.parent!);
     for (const it of this.interacts) live.add(it.object);
     batchStatic(this.root, (o) => live.has(o));
+  }
+
+  /** Field walls, the garden, the washing, nets, woodpile, well, Tib's boat, the memorial, gorse and oddments. */
+  private dressVillage(assets: Assets): void {
+    const put = (o: THREE.Object3D | null, x: number, z: number, yaw: number) => {
+      if (!o) return;
+      o.position.set(x, CLIFF_TOP, z);
+      o.rotation.y = yaw;
+      this.root.add(o);
+      this.takeCollision(o);
+    };
+    for (const run of FIELD_WALLS) {
+      for (let i = 0; i + 1 < run.length; i++) {
+        const [ax, az] = run[i]!;
+        const [bx, bz] = run[i + 1]!;
+        const len = Math.hypot(bx - ax, bz - az);
+        const n = Math.max(1, Math.round(len / 4));
+        const yaw = Math.atan2(-(bz - az), bx - ax);
+        for (let k = 0; k < n; k++) {
+          const t = (k + 0.5) / n;
+          const wall = assets.clone("home.glb", "HOME_wall_run");
+          if (!wall) return;
+          // Stretched a touch so the runs meet end to end.
+          wall.scale.x = len / n / 4;
+          put(wall, ax + (bx - ax) * t, az + (bz - az) * t, yaw);
+        }
+      }
+    }
+    for (const [name, x, z, yaw] of DRESSING) put(assets.clone("home.glb", name), x, z, yaw);
+    for (const [id, x, z, yaw] of ODDMENTS) put(assets.prop(id), x, z, yaw);
   }
 
   private add(mesh: THREE.Mesh, solid: boolean): void {
